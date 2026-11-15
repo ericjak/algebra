@@ -120,6 +120,7 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--gold); outl
 .pz-pile { fill: var(--pz); stroke: var(--line); stroke-dasharray: 5 4; }
 .pz-edge { fill: none; stroke: rgba(18, 8, 30, .62); stroke-width: 1.1; stroke-linejoin: round; }
 .pz-snap .pz-edge { animation: pzsnap .55s ease-out; }
+.pz-lift { filter: drop-shadow(0 5px 4px rgba(40, 20, 6, .35)); }
 .pz-flash { fill: #ffd76a; opacity: 0; pointer-events: none; transform-box: fill-box; transform-origin: center; }
 .pz-flash.go { animation: pzflash .65s ease-out; }
 .puzzle.boom { animation: pzshake .5s ease-out; }
@@ -2194,27 +2195,25 @@ const PUZZLE_ART_SET = (function () {
   // What each round finishes, in order: animated scenes (scenes.js) for rounds 1-3, the church jigsaw for round 4,
   // then Challenge Mode cycles on through the list. clip = which round-clear sound in sounds.js plays.
   const rewards = [
-    { scene: 'table', clip: 4 },         // the harvest table is set; ends with the candles lit (marimba and bells)
-    { scene: 'wagon', clip: 3 },         // pumpkins into the wagon; ends with the wagon rolling home (front-porch guitar)
-    { scene: 'geese', clip: 1 },         // geese join the V; ends with the flock flying off (breeze and harp)
-    { art: church, clip: 6 },            // bells
-    { art: cornucopia, clip: 0 }, { art: turkey, clip: 2 }, { art: pie, clip: 4 }, { art: bread, clip: 0 }, { art: shocks, clip: 1 }
+    { scene: 'table', clip: 0 },         // the harvest table is set; a match lights the candles ("Now Thank We All Our God", organ)
+    { scene: 'wagon', clip: 1 },         // pumpkins into the wagon; the tractor starts and pulls it home ("Come, Ye Thankful People, Come", guitar)
+    { scene: 'geese', clip: 2 },         // geese join the V; wingbeats and honking as they fly off ("We Gather Together", harp)
+    { art: church, clip: 3 },            // church bells and the Doxology (as the last round, the grand finale plays instead)
+    { art: cornucopia, clip: 4 }, { art: turkey, clip: 5 }, { art: pie, clip: 6 }, { art: bread, clip: 7 }, { art: shocks, clip: 8 }
   ];
   return { theme: 'Thanksgiving Harvest', pictures: [church, cornucopia, turkey, pie, bread, shocks], rewards };
 })();
 /* =====================================================================
-   ROUND-CLEAR SOUNDS — "Fall Festival" set, warm and acoustic: plucked
-   guitar and harp, marimba, soft bells, leaves and wind, an owl, applause.
-   One clip per picture in the same order as the pictures in art.js, plus the
-   snowy-tree scene and a finale. Same shape as before (PUZZLE_SOUND_SET):
-   play(ctx, index, finale) returns seconds.
-   Everything is generated with Web Audio; there are no sound files:
-     - strings are a Karplus-Strong plucked-string model (a burst of noise
-       circulating in a short, slowly damped delay line)
-     - marimba and bells add sine partials at the real instruments' overtone
-       ratios, each fading at its own rate
-     - leaves are thousands of tiny filtered crackles; wind is slowly swept noise
-     - everything goes through a small room reverb and a gentle limiter
+   ROUND-CLEAR SOUNDS — "Thanksgiving Harvest" set (Unit 3 game). Each scene and picture
+   gets its own moment, then a short arrangement of a public-domain Thanksgiving hymn:
+     round 1  harvest table   a match lights the candles, "Now Thank We All Our God" (organ)
+     round 2  harvest wagon   the tractor starts, "Come, Ye Thankful People, Come" (guitar)
+     round 3  geese           wingbeats and honking, "We Gather Together" (harp)
+     round 4  (last round)    church bells, the whole Doxology (organ and choir), bells, applause
+     Challenge Mode pictures  church bells and a line of the Doxology, "For the Beauty of the Earth",
+                              a turkey's gobble, a music box, fingerpicked guitar, a breeze and a flute stop
+   Same interface as the shared sounds.js (PUZZLE_SOUND_SET): play(ctx, index, finale) returns seconds.
+   Everything is generated with Web Audio; there are no sound files.
    ===================================================================== */
 const PUZZLE_SOUND_SET = (function () {
   'use strict';
@@ -2361,85 +2360,313 @@ const PUZZLE_SOUND_SET = (function () {
     play(ctx, buf, t, bp); bp.connect(g); g.connect(out);
   }
 
-  const N = { G2: n('G2'), A2: n('A2'), C3: n('C3'), D3: n('D3'), E3: n('E3'), F3: n('F3'), G3: n('G3'), A3: n('A3'), B3: n('B3'), C4: n('C4'), D4: n('D4'), E4: n('E4'), F4: n('F4'), Fs4: n('Fs4'), G4: n('G4'), A4: n('A4'), B4: n('B4'),
-    C5: n('C5'), D5: n('D5'), E5: n('E5'), G5: n('G5'), A5: n('A5'), B5: n('B5'), C6: n('C6'), D6: n('D6'), E6: n('E6'), G6: n('G6') };
-  const CH = {   // open-position guitar chord voicings, low string to high
-    G: [N.G2, n('B2'), N.D3, N.G3, N.B3, N.G4],
-    C: [N.C3, N.E3, N.G3, N.C4, N.E4],
-    D: [N.D3, N.A3, N.D4, N.Fs4],
-    F: [N.F3, N.A3, N.C4, N.F4],
-    Em: [n('E2'), n('B2'), N.E3, N.G3, N.B3, N.E4]
-  };
 
-  // ---------- the clips, in picture order, then the snowy tree, then the finale. Each returns its length in seconds (under 3). ----------
+  // ===================== new for the Thanksgiving set =====================
+  // note names: 'C4', 'F#4', 'Bb3' (A4 = 440)
+  const P = name => { const m = /^([A-G])(#|b)?(\d)$/.exec(name), base = { C: -9, D: -7, E: -5, F: -4, G: -2, A: 0, B: 2 }[m[1]] + (m[2] === '#' ? 1 : m[2] === 'b' ? -1 : 0); return 440 * Math.pow(2, (base + (Number(m[3]) - 4) * 12) / 12); };
+  function panner(ctx, pan, to) { if (!ctx.createStereoPanner) return to; const p = ctx.createStereoPanner(); p.pan.value = pan; p.connect(to); return p; }
+
+  // Pipe organ: a principal stop (rich, round, steady) or a flute stop (soft and pure), with the little
+  // "chiff" a real pipe makes as it speaks, two slightly detuned ranks so it breathes, and a gentle release.
+  const waves = new WeakMap();
+  function wave(ctx, kind) {
+    let m = waves.get(ctx); if (!m) { m = {}; waves.set(ctx, m); }
+    if (m[kind]) return m[kind];
+    const amps = { principal: [0, 1, 0.62, 0.36, 0.26, 0.14, 0.11, 0.06, 0.07, 0.03, 0.03], flute: [0, 1, 0.12, 0.09, 0.03, 0.02], reed: [0, 1, 0.8, 0.7, 0.55, 0.45, 0.36, 0.3, 0.22, 0.18, 0.14, 0.1], vox: [0, 1, 0.7, 0.45, 0.3, 0.14, 0.06, 0.03] }[kind];
+    const real = new Float32Array(amps.length), imag = new Float32Array(amps);
+    m[kind] = ctx.createPeriodicWave(real, imag);
+    return m[kind];
+  }
+  function organ(ctx, t, out, wet, f, dur, vol, o) {
+    o = o || {};
+    const g = gain(ctx, 0), lp = filter(ctx, 'lowpass', o.bright || 3200, 0.5), atk = 0.045, rel = 0.16, end = t + Math.max(dur, 0.08);
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vol, t + atk); g.gain.setValueAtTime(vol, end); g.gain.linearRampToValueAtTime(0, end + rel);
+    const osc = ctx.createOscillator(); osc.setPeriodicWave(wave(ctx, o.stop || 'principal')); osc.frequency.value = f; osc.detune.value = o.detune || 0; osc.connect(lp); osc.start(t); osc.stop(end + rel + 0.05);
+    if (o.chiff) {   // the pipe's soft chiff as the note speaks (melody only)
+      const ch = noiseBuf(ctx, 0.04, x => Math.pow(1 - x, 3), Math.round(f)), bp = filter(ctx, 'bandpass', Math.min(6000, f * 3), 2), cg = gain(ctx, vol * 0.12);
+      play(ctx, ch, t, bp); bp.connect(cg); cg.connect(g);
+    }
+    const dest = panner(ctx, o.pan || 0, out);
+    lp.connect(g); g.connect(dest); if (wet) { const w = gain(ctx, o.send === undefined ? 0.9 : o.send); g.connect(w); w.connect(wet); }
+  }
+  // A soft choir "ooh/ah": one smooth voice per note (a gentle harmonic blend, rounded off), with a slow vibrato that blooms in.
+  function choir(ctx, t, out, wet, f, dur, vol, o) {
+    o = o || {};
+    const end = t + dur, g = gain(ctx, 0), lp = filter(ctx, 'lowpass', 1600, 0.5);
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vol, t + 0.14); g.gain.setValueAtTime(vol, end); g.gain.linearRampToValueAtTime(0, end + 0.25);
+    const osc = ctx.createOscillator(), vib = ctx.createOscillator(), vg = gain(ctx, 0);
+    osc.setPeriodicWave(wave(ctx, 'vox')); osc.frequency.value = f;
+    vib.frequency.value = 5; vg.gain.setValueAtTime(0, t); vg.gain.linearRampToValueAtTime(f * 0.005, t + 0.6);
+    vib.connect(vg); vg.connect(osc.frequency); osc.connect(lp); lp.connect(g);
+    osc.start(t); vib.start(t); osc.stop(end + 0.3); vib.stop(end + 0.3);
+    g.connect(panner(ctx, o.pan || 0, out)); if (wet) { const w = gain(ctx, 1.1); g.connect(w); w.connect(wet); }
+  }
+  // A tower bell: the real partials of a tuned church bell (hum, prime, tierce, quint, nominal and above),
+  // each pair a hair apart so the bell warbles as it hums away, struck with a short metallic clank.
+  function churchBell(ctx, t, out, wet, f, vol, len, pan) {
+    const L = len || 4, dest = panner(ctx, pan || 0, out), body = gain(ctx, 1), lp = filter(ctx, 'lowpass', 7000, 0.5);
+    [[0.5, 0.5, 1], [1, 0.75, 0.62], [1.2, 0.5, 0.42], [1.5, 0.24, 0.34], [2, 0.62, 0.3], [2.5, 0.2, 0.2], [2.66, 0.22, 0.18], [3.01, 0.13, 0.12], [4.06, 0.08, 0.08]].forEach(([m, a, d], k) => {
+      if (f * m > 12000) return;
+      (k === 0 || k === 4 ? [0, 0.4 + k * 0.05] : [0]).forEach((beat, j) => {
+        const osc = ctx.createOscillator(), g = gain(ctx, 0); osc.frequency.value = f * m + beat;
+        g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vol * a * (j ? 0.45 : 1), t + 0.004); g.gain.exponentialRampToValueAtTime(0.0001, t + L * d);
+        osc.connect(g); g.connect(body); osc.start(t); osc.stop(t + L * d + 0.05);
+      });
+    });
+    const clank = noiseBuf(ctx, 0.04, x => Math.pow(1 - x, 4), Math.round(f) + 3), bp = filter(ctx, 'bandpass', Math.min(8000, f * 4), 3), cg = gain(ctx, vol * 0.5);
+    play(ctx, clank, t, bp); bp.connect(cg); cg.connect(body);
+    body.connect(lp); lp.connect(dest); if (wet) { const w = gain(ctx, 0.7); lp.connect(w); w.connect(wet); }
+  }
+  // A peal: bells rung one after another down the scale, like a tower ringing rounds.
+  function peal(ctx, t, out, wet, names, gap, vol, len) {
+    names.forEach((nm, i) => churchBell(ctx, t + i * gap, out, wet, P(nm), vol * (0.85 + 0.15 * ((i * 7) % 3) / 2), len || 3.6, ((i % 4) - 1.5) * 0.35));
+  }
+  // A music box: tiny steel tines, bright and short, with a faint tick of the comb.
+  function musicBox(ctx, t, out, wet, f, vol) {
+    [[1, 1, 1.4], [3.0, 0.2, 0.4], [5.98, 0.1, 0.18], [8.2, 0.04, 0.1]].forEach(([m, a, d]) => {
+      if (f * m > 16000) return;
+      const osc = ctx.createOscillator(), g = gain(ctx, 0); osc.frequency.value = f * m;
+      g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vol * a, t + 0.002); g.gain.exponentialRampToValueAtTime(0.0001, t + d);
+      osc.connect(g); g.connect(out); if (wet) g.connect(wet); osc.start(t); osc.stop(t + d + 0.05);
+    });
+    const tick = noiseBuf(ctx, 0.008, x => 1 - x, 9), hp = filter(ctx, 'highpass', 4000), tg = gain(ctx, vol * 0.12);
+    play(ctx, tick, t, hp); hp.connect(tg); tg.connect(out);
+  }
+  // A goose's honk: a reedy "ah-honk" through the bird's nasal formants, with a quick grace note in front.
+  function honk(ctx, t, out, wet, f, vol, pan) {
+    const dest = panner(ctx, pan || 0, out), g = gain(ctx, 0), mix = gain(ctx, 1), osc = ctx.createOscillator();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(f * 1.28, t); osc.frequency.linearRampToValueAtTime(f * 1.06, t + 0.045); osc.frequency.setValueAtTime(f * 1.04, t + 0.05);
+    osc.frequency.linearRampToValueAtTime(f, t + 0.09); osc.frequency.linearRampToValueAtTime(f * 0.9, t + 0.22);
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vol * 0.55, t + 0.012); g.gain.linearRampToValueAtTime(vol * 0.2, t + 0.045);
+    g.gain.linearRampToValueAtTime(vol, t + 0.07); g.gain.setValueAtTime(vol, t + 0.15); g.gain.linearRampToValueAtTime(0, t + 0.24);
+    osc.connect(mix);
+    [[850, 5, 1], [1500, 7, 0.8], [2600, 9, 0.3]].forEach(([fr, q, a]) => { const bp = filter(ctx, 'bandpass', fr, q), bg = gain(ctx, a * 1.8); mix.connect(bp); bp.connect(bg); bg.connect(g); });
+    g.connect(dest); if (wet) { const w = gain(ctx, 0.5); g.connect(w); w.connect(wet); }
+    osc.start(t); osc.stop(t + 0.26);
+  }
+  // Wingbeats: soft whooshes of air, a few each second.
+  function wings(ctx, t, out, dur, rate, vol, seed) {
+    const r = rng(seed || 41);
+    for (let at = 0; at < dur; at += (1 / rate) * (0.85 + r() * 0.3)) {
+      const b = noiseBuf(ctx, 0.11, x => Math.sin(Math.PI * Math.pow(x, 0.6)) * (1 - x), 200 + Math.floor(at * 10)), lp = filter(ctx, 'lowpass', 700 + r() * 500, 0.7), g = gain(ctx, vol * (0.6 + 0.4 * r()) * Math.min(1, (at + 0.2) / 0.5));
+      play(ctx, b, t + at, lp); lp.connect(g); g.connect(out);
+    }
+  }
+  // A small tractor: the starter grinds, the engine catches with a cough and a puff, then putt-putts and
+  // pulls away (each putt is a low thump with a little exhaust hiss; the sound darkens as it gets farther).
+  function tractor(ctx, t, out, wet, dur, vol) {
+    const r = rng(61);
+    // the starter: a fast, uneven grind
+    const crank = noiseBuf(ctx, 0.7, x => (0.6 + 0.4 * Math.sin(x * 2 * Math.PI * 9)) * Math.min(1, x * 8) * (1 - x * 0.3), 62), cl = filter(ctx, 'bandpass', 380, 1.6), cg = gain(ctx, vol * 0.5);
+    play(ctx, crank, t, cl); cl.connect(cg); cg.connect(out);
+    const far = filter(ctx, 'lowpass', 2400, 0.5), fg = gain(ctx, 1);
+    far.frequency.setValueAtTime(2400, t + 2); far.frequency.exponentialRampToValueAtTime(380, t + dur);
+    fg.gain.setValueAtTime(1, t + 2); fg.gain.exponentialRampToValueAtTime(0.06, t + dur);
+    far.connect(fg); fg.connect(out); if (wet) { const w = gain(ctx, 0.25); fg.connect(w); w.connect(wet); }
+    let at = 0.72, k = 0;
+    while (at < dur) {
+      const rate = 4.2 + Math.min(1, (at - 0.7) / 1.6) * 3.6, big = k < 2 ? 1.7 : 1;
+      const th = ctx.createOscillator(), tg = gain(ctx, 0); th.frequency.setValueAtTime(70, t + at); th.frequency.exponentialRampToValueAtTime(38, t + at + 0.09);
+      tg.gain.setValueAtTime(0, t + at); tg.gain.linearRampToValueAtTime(vol * 0.9 * big, t + at + 0.006); tg.gain.exponentialRampToValueAtTime(0.0008, t + at + 0.12);
+      th.connect(tg); tg.connect(far); th.start(t + at); th.stop(t + at + 0.14);
+      const hiss = noiseBuf(ctx, 0.07, x => Math.pow(1 - x, 2), 70 + k), hl = filter(ctx, 'lowpass', 900 + r() * 400, 0.8), hg = gain(ctx, vol * 0.45 * big);
+      play(ctx, hiss, t + at, hl); hl.connect(hg); hg.connect(far);
+      at += (1 / rate) * (0.9 + r() * 0.2); k++;
+    }
+  }
+  // Striking a match: a scratch, the flare catching, and a few crackles.
+  function match(ctx, t, out, vol) {
+    const scr = noiseBuf(ctx, 0.14, x => (0.5 + 0.5 * Math.sin(x * 70)) * (1 - x * 0.4), 81), sb = filter(ctx, 'bandpass', 3200, 1.2), sg = gain(ctx, vol * 0.9);
+    play(ctx, scr, t, sb); sb.connect(sg); sg.connect(out);
+    const fl = noiseBuf(ctx, 0.7, x => Math.min(1, x * 9) * Math.pow(1 - x, 1.6), 82), fb = filter(ctx, 'lowpass', 1400, 0.7), fg = gain(ctx, vol * 0.75);
+    fb.frequency.setValueAtTime(3000, t + 0.12); fb.frequency.exponentialRampToValueAtTime(600, t + 0.8);
+    play(ctx, fl, t + 0.12, fb); fb.connect(fg); fg.connect(out);
+    leaves(ctx, t + 0.25, out, 0.5, vol * 0.25, 120, 83);
+  }
+  // A turkey's gobble: a quick, bubbling run of nasal yelps falling in pitch.
+  function gobble(ctx, t, out, wet, vol, pan) {
+    const dest = panner(ctx, pan || 0, out), r = rng(91);
+    for (let k = 0, at = 0; k < 9; k++, at += 0.052 + r() * 0.012) {
+      const f0 = 720 - k * 28 + r() * 40, osc = ctx.createOscillator(), g = gain(ctx, 0), mix = gain(ctx, 1);
+      osc.type = 'sawtooth'; osc.frequency.setValueAtTime(f0 * 1.15, t + at); osc.frequency.exponentialRampToValueAtTime(f0 * 0.8, t + at + 0.05);
+      const a = vol * (k < 2 ? 0.7 : 1) * (1 - k / 14);
+      g.gain.setValueAtTime(0, t + at); g.gain.linearRampToValueAtTime(a, t + at + 0.008); g.gain.exponentialRampToValueAtTime(0.001, t + at + 0.06);
+      osc.connect(mix);
+      [[1100, 6, 1], [2300, 8, 0.6]].forEach(([fr, q, am]) => { const bp = filter(ctx, 'bandpass', fr, q), bg = gain(ctx, am * 2); mix.connect(bp); bp.connect(bg); bg.connect(g); });
+      g.connect(dest); if (wet) { const w = gain(ctx, 0.3); g.connect(w); w.connect(wet); }
+      osc.start(t + at); osc.stop(t + at + 0.07);
+    }
+  }
+
+  // ---------- playing a written-out score ----------
+  // a voice is a list of [note name (or null for a rest), beats]; it is played by inst(t, f, seconds) from time t at `bpm`
+  function voice(notes, t, bpm, inst) {
+    const spb = 60 / bpm; let at = t;
+    notes.forEach(([nm, b]) => { if (nm) inst(at, P(nm), b * spb); at += b * spb; });
+    return at;
+  }
+  const beats = notes => notes.reduce((s, x) => s + x[1], 0);
+
+  // ===== the hymns (public-domain tunes; harmonies from standard hymnal settings, filled in where needed) =====
+  // NUN DANKET ("Now Thank We All Our God"), first two lines, in E-flat
+  const NUN = {
+    S: [['Bb4', 1], ['Bb4', 1], ['Bb4', 1], ['C5', 1], ['C5', 1], ['Bb4', 3], ['G4', 1], ['Ab4', 1], ['G4', 1], ['F4', 1], ['G4', 1], ['F4', 2], ['Eb4', 3]],
+    A: [['Eb4', 1], ['Eb4', 1], ['Eb4', 1], ['Eb4', 1], ['C4', 0.5], ['D4', 0.5], ['Eb4', 3], ['Eb4', 1], ['C4', 1], ['Eb4', 1], ['D4', 1], ['Eb4', 1], ['Eb4', 1], ['D4', 1], ['Eb4', 3]],
+    T: [['G3', 1], ['G3', 1], ['Bb3', 1], ['Ab3', 1], ['Ab3', 1], ['G3', 3], ['Bb3', 1], ['Ab3', 1], ['Bb3', 1], ['Bb3', 1], ['Bb3', 1], ['Bb3', 1], ['Ab3', 1], ['G3', 3]],
+    B: [['Eb3', 1], ['Eb3', 1], ['G3', 1], ['Ab3', 1], ['F3', 1], ['Eb3', 3], ['Eb3', 1], ['Ab2', 1], ['Eb3', 1], ['Bb2', 1], ['Eb3', 1], ['Bb2', 2], ['Eb2', 3]]
+  };
+  // ST. GEORGE'S WINDSOR ("Come, Ye Thankful People, Come"), first line twice, in F: melody and chords per beat
+  const WINDSOR = {
+    S: [['A4', 1.5], ['A4', 0.5], ['C5', 1], ['A4', 1], ['F4', 1], ['G4', 1], ['A4', 2], ['A4', 1.5], ['A4', 0.5], ['C5', 1], ['A4', 1], ['F4', 1], ['G4', 1], ['A4', 3]],
+    chords: ['F', 'F', 'F', 'F', 'Bb', 'C', 'F', 'F', 'F', 'F', 'F', 'Dm', 'Bb', 'C', 'F', 'F', 'F'],
+    bass: ['F2', 'C3', 'F2', 'C3', 'Bb2', 'C3', 'F2', 'C3', 'F2', 'C3', 'F2', 'D3', 'Bb2', 'C3', 'F2', 'C3', 'F2']
+  };
+  // KREMSER ("We Gather Together"), first line, in C, 3/4 (starts on a pickup)
+  const KREMSER = {
+    S: [['G4', 1], ['G4', 1.5], ['A4', 0.5], ['G4', 1], ['E4', 1], ['F4', 1], ['G4', 1], ['F4', 1.5], ['E4', 0.5], ['D4', 1], ['E4', 1], ['C4', 3]],
+    // one chord per beat, starting with the pickup
+    chords: ['C', 'C', 'C', 'C', 'C', 'G7', 'C', 'F', 'F', 'G', 'C', 'C', 'C', 'C'],
+    bass: ['C3', 'C3', null, null, 'C3', 'G2', 'C3', 'F2', null, 'G2', 'C3', null, null, null]
+  };
+  // DIX ("For the Beauty of the Earth"), first line, in G (starts on a two-beat pickup)
+  const DIX = {
+    S: [['G4', 1], ['F#4', 0.5], ['G4', 0.5], ['A4', 1], ['G4', 1], ['C5', 1], ['C5', 1], ['B4', 2], ['E4', 1], ['F#4', 1], ['G4', 1], ['E4', 1], ['D4', 1], ['D4', 1], ['D4', 3]],
+    chords: ['G', 'D', 'D', 'G', 'C', 'D7', 'G', 'G', 'C', 'D', 'Em', 'C', 'G', 'D', 'G', 'G', 'G'],
+    bass: ['G2', 'F#2', 'D3', 'B2', 'C3', 'D3', 'G2', null, 'C3', 'D3', 'E3', 'C3', 'B2', 'D3', 'G2', null, null]
+  };
+  // OLD HUNDREDTH (the Doxology, "Praise God, from whom all blessings flow"), all four lines, in G
+  const OLD100 = {
+    S: [['G4', 2], ['G4', 1], ['F#4', 1], ['E4', 1], ['D4', 1], ['G4', 2], ['A4', 2], ['B4', 2],
+      ['B4', 2], ['B4', 1], ['B4', 1], ['A4', 1], ['G4', 1], ['C5', 2], ['B4', 2], ['A4', 2],
+      ['G4', 2], ['A4', 1], ['B4', 1], ['A4', 1], ['G4', 1], ['E4', 2], ['F#4', 2], ['G4', 2],
+      ['D5', 2], ['B4', 1], ['G4', 1], ['A4', 1], ['C5', 1], ['B4', 2], ['A4', 2], ['G4', 4]],
+    A: [['D4', 2], ['D4', 1], ['D4', 1], ['B3', 1], ['B3', 1], ['B3', 2], ['D4', 2], ['D4', 2],
+      ['D4', 2], ['D4', 1], ['D4', 1], ['D4', 1], ['B3', 1], ['E4', 2], ['D4', 2], ['D4', 2],
+      ['B3', 2], ['D4', 1], ['D4', 1], ['C4', 1], ['D4', 1], ['C4', 2], ['C4', 2], ['B3', 2],
+      ['D4', 2], ['D4', 1.5], ['C#4', 0.5], ['D4', 1], ['E4', 1], ['D4', 3], ['C#4', 1], ['B3', 4]],
+    T: [['B3', 2], ['B3', 1], ['A3', 1], ['G3', 1], ['F#3', 1], ['E3', 2], ['F#3', 2], ['G3', 2],
+      ['B3', 2], ['G3', 1], ['G3', 1], ['F#3', 1], ['G3', 1], ['G3', 2], ['G3', 2], ['F#3', 2],
+      ['G3', 2], ['F#3', 1], ['G3', 1], ['E3', 1], ['G3', 1], ['G3', 2], ['A3', 2], ['G3', 2],
+      ['A3', 2], ['G3', 1], ['G3', 1], ['F#3', 1], ['G3', 1], ['G3', 2], ['F#3', 2], ['G3', 4]],
+    B: [['G3', 2], ['G3', 1], ['D3', 1], ['E3', 1], ['B2', 1], ['E3', 2], ['D3', 2], ['G2', 2],
+      ['G3', 2], ['G3', 1], ['G3', 1], ['D3', 1], ['E3', 1], ['C3', 2], ['G2', 2], ['D3', 2],
+      ['E3', 2], ['D3', 1], ['G2', 1], ['A2', 1], ['B2', 1], ['C3', 2], ['A2', 2], ['E3', 2],
+      ['F#3', 2], ['G3', 1], ['E3', 1], ['D3', 1], ['C3', 1], ['D3', 2], ['D3', 2], ['G2', 4]]
+  };
+  const CHORD = {   // chord tones from the bass up, for strums, arpeggios and pads
+    F: ['F3', 'A3', 'C4', 'F4'], Bb: ['F3', 'Bb3', 'D4', 'F4'], C: ['E3', 'G3', 'C4', 'E4'], Dm: ['D3', 'A3', 'D4', 'F4'],
+    G7: ['F3', 'G3', 'B3', 'D4'], G: ['G3', 'B3', 'D4', 'G4'], D: ['F#3', 'A3', 'D4', 'F#4'], D7: ['F#3', 'A3', 'C4', 'D4'], Em: ['E3', 'G3', 'B3', 'E4']
+  };
+  // four voices on the organ (and, if asked, a soft choir doubling them); returns when the last note ends
+  function hymnSATB(ctx, t, out, wet, H, bpm, vol, withChoir, until) {
+    const parts = [['S', 0.22, 1, 0.1], ['A', -0.18, 0.62, -0.2], ['T', 0.18, 0.6, 0.2], ['B', -0.1, 0.72, -0.05]];
+    let end = t;
+    parts.forEach(([v, pan, lvl, cpan]) => {
+      const list = until ? clip(H[v], until) : H[v];
+      end = Math.max(end, voice(list, t, bpm, (at, f, d) => organ(ctx, at, out, wet, f, d * 0.97, vol * lvl, { pan, stop: 'principal', bright: v === 'B' ? 1400 : 3000, chiff: v === 'S' })));
+      if (v === 'B') voice(list, t, bpm, (at, f, d) => organ(ctx, at, out, wet, f / 2, d * 0.97, vol * 0.5, { stop: 'flute', pan: 0 }));        // the pedal an octave down
+      if (withChoir) voice(list, t, bpm, (at, f, d) => choir(ctx, at, out, wet, f, d * 0.95, vol * 0.5 * lvl, { pan: cpan }));
+    });
+    return end;
+  }
+  // the first `n` beats of a voice
+  function clip(notes, n) { const outN = []; let s = 0; for (const [nm, b] of notes) { if (s >= n) break; outN.push([nm, Math.min(b, n - s)]); s += b; } return outN; }
+
+  // ---------- the clips. Each returns its length in seconds. ----------
   const clips = [
-    { name: 'Fingerpicked guitar', picture: 'pumpkin patch',
+    { name: 'The candles are lit, then "Now Thank We All Our God" on the organ', picture: 'harvest table (round 1)',
       play(ctx, t, out, wet) {
-        [N.G2, N.D3, N.G3, N.B3, N.D4, N.G4, N.B3, N.D4].forEach((f, i) => guitar(ctx, t + i * 0.14, out, wet, f, i === 0 ? 0.55 : 0.4));
-        strum(ctx, t + 1.2, out, wet, CH.C, 0.5); strum(ctx, t + 1.55, out, wet, CH.D, 0.48);
-        strum(ctx, t + 1.9, out, wet, CH.G, 0.6, false, 0.022);
-        return 2.9;
+        match(ctx, t + 0.25, out, 0.55); match(ctx, t + 0.9, out, 0.45);
+        bell(ctx, t + 0.55, out, wet, P('Bb5'), 0.08, 1.6, true); bell(ctx, t + 1.2, out, wet, P('Eb6'), 0.08, 1.6, true);
+        return hymnSATB(ctx, t + 1.5, out, wet, NUN, 112, 0.2, false) - t + 1.1;
       } },
-    { name: 'Breeze in the cornstalks, then a harp', picture: 'scarecrow',
+    { name: 'The tractor starts, then "Come, Ye Thankful People, Come" on guitar', picture: 'harvest wagon (round 2)',
       play(ctx, t, out, wet) {
-        wind(ctx, t, out, wet, 1.9, 0.16, 5); leaves(ctx, t + 0.2, out, 1.4, 0.07, 300, 6);
-        [N.C4, N.D4, N.E4, N.G4, N.A4, N.C5, N.D5, N.E5, N.G5, N.A5].forEach((f, i) => harp(ctx, t + 0.8 + i * 0.07, out, wet, f, 0.28));
-        [N.C4, N.G4, N.E5].forEach(f => harp(ctx, t + 1.65, out, wet, f, 0.26));
-        return 2.9;
-      } },
-    { name: 'Leaves underfoot, then a marimba', picture: 'squirrel',
-      play(ctx, t, out, wet) {
-        [0, 0.34, 0.68].forEach((at, k) => leaves(ctx, t + at, out, 0.3, 0.42, 1300, 30 + k));
-        [N.E5, N.G5, N.A5, N.C6].forEach((f, i) => marimba(ctx, t + 1.08 + i * 0.12, out, wet, f, 0.34));
-        marimba(ctx, t + 1.64, out, wet, N.G5, 0.3, 1.2); marimba(ctx, t + 1.64, out, wet, N.E6, 0.24, 1.2); marimba(ctx, t + 1.64, out, wet, N.C5, 0.26, 1.2);
-        return 2.7;
-      } },
-    { name: 'Front-porch guitar and bass', picture: 'red barn',
-      play(ctx, t, out, wet) {
-        const beat = 0.3, prog = [['G', N.G2], ['G', N.D3], ['C', N.C3], ['C', N.G2], ['D', N.D3], ['D', N.A2], ['G', N.G2]];
-        prog.forEach(([ch, bass], i) => {
-          guitar(ctx, t + i * beat, out, wet, bass, 0.62, { bright: 0.2, decay: 1.2, dur: 1.4, send: 0.2 });           // the bass note on the beat
-          if (i < prog.length - 1) strum(ctx, t + i * beat + beat / 2, out, wet, CH[ch].slice(-4), 0.34, i % 2 === 1); // the strum between
+        tractor(ctx, t, out, wet, 6.5, 0.5);
+        const t0 = t + 1.7, bpm = 120, spb = 60 / bpm;
+        WINDSOR.chords.forEach((c, i) => {
+          if (WINDSOR.bass[i]) guitar(ctx, t0 + i * spb, out, wet, P(WINDSOR.bass[i]), 0.5, { bright: 0.2, decay: 1.4, dur: 1.6, send: 0.2 });
+          if (i < WINDSOR.chords.length - 2) strum(ctx, t0 + (i + 0.5) * spb, out, wet, CHORD[c].map(P), 0.22, i % 2 === 1);
         });
-        strum(ctx, t + 6 * beat, out, wet, CH.G, 0.62, false, 0.02);
-        return 2.9;
+        const end = voice(WINDSOR.S, t0, bpm, (at, f) => guitar(ctx, at, out, wet, f, 0.52, { bright: 0.62, decay: 2.2, dur: 2.4, send: 0.5 }));
+        strum(ctx, end - 3 * spb, out, wet, CHORD.F.concat(['A4']).map(P), 0.5, false, 0.025);
+        return end - t + 0.9;
       } },
-    { name: 'Marimba and bells', picture: 'bowl of treats',
+    { name: 'Wingbeats and honking, then "We Gather Together" on the harp', picture: 'flock of geese (round 3)',
       play(ctx, t, out, wet) {
-        [N.C5, N.E5, N.G5, N.C6, N.E5, N.G5, N.C6, N.E6].forEach((f, i) => marimba(ctx, t + i * 0.1, out, wet, f, 0.3));
-        [N.C5, N.G5, N.C6].forEach(f => marimba(ctx, t + 0.95, out, wet, f, 0.24, 1.3));
-        [N.E6, N.G6, N.C6].forEach((f, i) => bell(ctx, t + 1.25 + i * 0.16, out, wet, f, 0.12, 1.4));
-        return 2.7;
+        wings(ctx, t, out, 1.9, 5.5, 0.28);
+        [[0.15, 330, -0.5], [0.45, 300, 0.3], [0.62, 345, -0.1], [0.95, 310, 0.5], [1.25, 335, -0.3], [1.5, 300, 0.2], [2.0, 320, 0.6]].forEach(([at, f, p], k) => honk(ctx, t + at, out, wet, f, 0.32 - k * 0.025, p));
+        const t0 = t + 2.1, bpm = 126, spb = 60 / bpm;
+        KREMSER.chords.forEach((c, i) => {
+          if (KREMSER.bass[i]) harp(ctx, t0 + i * spb, out, wet, P(KREMSER.bass[i]), 0.32);
+          if (i > 0 && i < KREMSER.chords.length - 3) [1, 2].forEach(j => harp(ctx, t0 + (i + j / 3) * spb, out, wet, P(CHORD[c][j]), 0.14));
+        });
+        const end = voice(KREMSER.S, t0, bpm, (at, f) => harp(ctx, at, out, wet, f * 2, 0.3));
+        ['C3', 'G3', 'C4', 'E4', 'G4', 'C5'].forEach((nm, i) => harp(ctx, end - 3 * spb + i * 0.06, out, wet, P(nm), 0.2));
+        honk(ctx, end - 0.6, out, wet, 290, 0.08, 0.7);
+        return end - t + 0.8;
       } },
-    { name: 'An owl in the woods', picture: 'owl',
+    { name: 'Church bells, then the first line of the Doxology', picture: 'country church',
       play(ctx, t, out, wet) {
-        wind(ctx, t, out, wet, 2.8, 0.07, 9);
-        [[0.15, 0.36], [0.62, 0.16], [0.82, 0.2], [1.18, 0.34], [1.62, 0.34]].forEach(([at, dur], i) => hoot(ctx, t + at, out, wet, i === 0 ? 300 : 286, dur, 0.5));
-        bell(ctx, t + 2.1, out, wet, N.E5, 0.08, 1.2, true);
-        return 2.9;
+        peal(ctx, t, out, wet, ['G5', 'F#5', 'E5', 'D5', 'C5', 'B4', 'A4', 'G4'], 0.3, 0.16);
+        return hymnSATB(ctx, t + 2.7, out, wet, OLD100, 150, 0.19, true, 12) - t + 1.0;
       } },
-    { name: 'Snowfall bells', picture: 'snow on the tree',
+    { name: '"For the Beauty of the Earth" on harp and strings', picture: 'cornucopia',
       play(ctx, t, out, wet) {
-        pad(ctx, t, out, wet, [N.C4, N.G4, N.E5], 2.8, 0.12);
-        [N.G6, N.E6, N.D6, N.C6, N.G5, N.E6, N.C6].forEach((f, i) => bell(ctx, t + 0.1 + i * 0.24, out, wet, f, 0.15 - i * 0.005, 1.7));
-        return 2.9;
+        const bpm = 112, spb = 60 / bpm;
+        DIX.chords.forEach((c, i) => {
+          if (DIX.bass[i]) harp(ctx, t + i * spb, out, wet, P(DIX.bass[i]), 0.3);
+          if (i % 2 === 0) pad(ctx, t + i * spb, out, wet, CHORD[c].slice(1).map(P), spb * 2.1, 0.05);
+        });
+        const end = voice(DIX.S, t, bpm, (at, f) => harp(ctx, at, out, wet, f * 2, 0.32));
+        return end - t + 1.0;
       } },
-    { name: 'Grand finale: strummed chords, bells and applause', picture: '(last round)',
+    { name: 'A gobble, then a marimba', picture: 'wild turkey',
       play(ctx, t, out, wet) {
-        strum(ctx, t, out, wet, CH.C, 0.56); strum(ctx, t + 0.32, out, wet, CH.F, 0.52); strum(ctx, t + 0.64, out, wet, CH.G.slice(1), 0.52);
-        strum(ctx, t + 0.96, out, wet, CH.C, 0.66, false, 0.024);
-        pad(ctx, t + 0.9, out, wet, [N.C4, N.E4, N.G4, N.C5], 2.0, 0.08);
-        [N.C6, N.E6, N.G6, N.E6, N.C6].forEach((f, i) => bell(ctx, t + 1.1 + i * 0.13, out, wet, f, 0.1, 1.3));
-        applause(ctx, t + 1.0, out, 1.95, 0.5);
-        return 2.94;
+        gobble(ctx, t + 0.1, out, wet, 0.4, -0.3); gobble(ctx, t + 0.95, out, wet, 0.32, 0.3);
+        const end = voice(KREMSER.S, t + 1.8, 150, (at, f) => marimba(ctx, at, out, wet, f * 2, 0.32));
+        [P('C5'), P('E5'), P('G5'), P('C6')].forEach(f => marimba(ctx, end - 1.2, out, wet, f, 0.2, 1.4));
+        return end - t + 0.6;
+      } },
+    { name: '"Now Thank We All Our God" on a music box', picture: 'pumpkin pie',
+      play(ctx, t, out, wet) {
+        const end = voice(NUN.S, t, 120, (at, f) => musicBox(ctx, at, out, wet, f * 2, 0.22));
+        voice(NUN.B, t, 120, (at, f) => musicBox(ctx, at, out, wet, f * 2, 0.1));
+        return end - t + 1.2;
+      } },
+    { name: '"Come, Ye Thankful People, Come," fingerpicked', picture: 'harvest bread',
+      play(ctx, t, out, wet) {
+        const bpm = 132, spb = 60 / bpm, half = 8;
+        WINDSOR.chords.slice(0, half).forEach((c, i) => { guitar(ctx, t + i * spb, out, wet, P(WINDSOR.bass[i]), 0.45, { bright: 0.25, decay: 1.6 }); guitar(ctx, t + (i + 0.5) * spb, out, wet, P(CHORD[c][2]), 0.22); });
+        const end = voice(clip(WINDSOR.S, half), t, bpm, (at, f) => guitar(ctx, at, out, wet, f, 0.5, { bright: 0.6, decay: 2.4 }));
+        strum(ctx, end, out, wet, CHORD.F.concat(['A4']).map(P), 0.5, false, 0.03);
+        return end - t + 1.6;
+      } },
+    { name: 'A breeze in the corn, then "We Gather Together" on the organ\'s flute stop', picture: 'corn shocks',
+      play(ctx, t, out, wet) {
+        wind(ctx, t, out, wet, 2.4, 0.16, 5); leaves(ctx, t + 0.3, out, 1.6, 0.06, 300, 6);
+        const t0 = t + 1.2, bpm = 112;
+        voice(KREMSER.chords.map((c, i) => [CHORD[c][0], 1]), t0, bpm, (at, f, d) => organ(ctx, at, out, wet, f, d, 0.06, { stop: 'flute' }));
+        voice(KREMSER.chords.map((c, i) => [CHORD[c][2], 1]), t0, bpm, (at, f, d) => organ(ctx, at, out, wet, f, d, 0.05, { stop: 'flute' }));
+        const end = voice(KREMSER.S, t0, bpm, (at, f, d) => organ(ctx, at, out, wet, f * 2, d * 0.95, 0.16, { stop: 'flute', chiff: true }));
+        return end - t + 0.8;
+      } },
+    { name: 'Grand finale: church bells, the whole Doxology on organ and choir, then bells and applause', picture: '(last round)',
+      play(ctx, t, out, wet) {
+        peal(ctx, t, out, wet, ['G5', 'F#5', 'E5', 'D5', 'C5', 'B4', 'A4', 'G4'], 0.3, 0.16);
+        const end = hymnSATB(ctx, t + 2.7, out, wet, OLD100, 168, 0.19, true);
+        peal(ctx, end - 0.4, out, wet, ['G5', 'D5', 'B4', 'G4', 'G5', 'D5', 'B4', 'G4'], 0.24, 0.13);
+        applause(ctx, end + 0.2, out, 2.6, 0.32, 26);
+        return end - t + 3.0;
       } }
   ];
   const FINALE = clips.length - 1;
 
-  // ---------- the room: a short stereo reverb made once per audio context, and a gentle limiter ----------
-  let rig = null;
-  function rigFor(ctx) {
-    if (rig && rig.ctx === ctx) return rig;
+  // ---------- the room: a short stereo reverb (made once per audio context) and a gentle limiter ----------
+  const halls = new WeakMap();
+  function hallFor(ctx) {
+    if (halls.has(ctx)) return halls.get(ctx);
     const sr = ctx.sampleRate, len = Math.floor(sr * 1.6), hall = ctx.createBuffer(2, len, sr);
     for (let ch = 0; ch < 2; ch++) {
       const d = hall.getChannelData(ch), r = rng(500 + ch); let lp = 0;
@@ -2450,43 +2677,94 @@ const PUZZLE_SOUND_SET = (function () {
       }
       [0.011, 0.019, 0.027, 0.041].forEach((at, k) => { const i = Math.floor(sr * (at + ch * 0.003)); d[i] += 0.5 / (k + 1); });   // a few early reflections
     }
-    rig = { ctx, hall, bus: null };
-    return rig;
+    halls.set(ctx, hall);
+    return hall;
   }
-  function hush(r, when) {
-    if (!r || !r.bus) return;
-    try { r.bus.gain.cancelScheduledValues(when); r.bus.gain.setTargetAtTime(0, when, 0.02); } catch (e) { /* already finished */ }
-    r.bus = null;
+  // the signal chain a clip plays into: dry mix + reverb send, through the limiter, to dest
+  function chain(ctx, dest) {
+    const mix = gain(ctx, 0.9), wet = gain(ctx, 0.28), echo = ctx.createConvolver(), limit = ctx.createDynamicsCompressor();
+    limit.threshold.value = -14; limit.knee.value = 8; limit.ratio.value = 4; limit.attack.value = 0.004; limit.release.value = 0.2;
+    echo.buffer = hallFor(ctx); wet.connect(echo); echo.connect(mix); mix.connect(limit); limit.connect(dest);
+    return { mix, wet };
   }
 
+  // Each clip is rendered ahead of time (an offline audio context, not in real time) into one sound buffer,
+  // so even the big finale plays back as a single smooth sound. Building hundreds of notes live can make a
+  // busy laptop stutter and crackle. Renders are kept, and warm() renders them all in the background.
+  const RATE = 32000;
+  const OAC = typeof window !== 'undefined' && (window.OfflineAudioContext || window.webkitOfflineAudioContext);
+  const renders = new WeakMap(), lengths = {};
+  const pickIdx = (index, finale) => (finale ? FINALE : ((Math.floor(index) % FINALE) + FINALE) % FINALE);
+  function lengthOf(idx) {   // a dry run on a one-sample context just to learn the clip's length
+    if (lengths[idx] === undefined) { try { const o = new OAC(2, 1, RATE); lengths[idx] = clips[idx].play(o, 0.02, gain(o, 0), gain(o, 0)) + 0.02; } catch (e) { lengths[idx] = 3; } }
+    return lengths[idx];
+  }
+  function rendered(ctx, idx) {
+    let m = renders.get(ctx); if (!m) { m = {}; renders.set(ctx, m); }
+    if (!m[idx]) {
+      m[idx] = new Promise(res => {
+        try {
+          const len = lengthOf(idx), off = new OAC(2, Math.ceil(RATE * (len + 0.3)), RATE), c = chain(off, off.destination);
+          clips[idx].play(off, 0.02, c.mix, c.wet);
+          off.startRendering().then(buf => res({ buf, dur: len }), () => res(null));
+        } catch (e) { res(null); }
+      });
+    }
+    return m[idx];
+  }
+  let live = null;
+  function fadeOut(p, ctx) { if (p && p.g) { try { p.g.gain.cancelScheduledValues(ctx.currentTime); p.g.gain.setTargetAtTime(0, ctx.currentTime, 0.03); } catch (e) { /* done */ } } }
+  // the old way, built live, if this browser cannot render offline
+  function playLive(ctx, idx) {
+    const t = ctx.currentTime + 0.04, g = gain(ctx, 1); g.connect(ctx.destination);
+    const c = chain(ctx, g), dur = clips[idx].play(ctx, t, c.mix, c.wet);
+    g.gain.setValueAtTime(1, t + dur - 0.3); g.gain.linearRampToValueAtTime(0, t + dur);
+    live = { g, ctx };
+    return dur + 0.04;
+  }
+  let warming = null;
+
   return {
-    theme: 'Fall Festival',
+    theme: 'Thanksgiving Harvest',
     voice: { rate: 1, pitch: 1 },      // the announcer: a natural voice at normal speed (the game picks the most natural voice available)
     names: clips.map(c => c.name),
     pictures: clips.map(c => c.picture),
     finaleIndex: FINALE,
     // Plays the clip for picture number `index` (0-based), or the finale clip when `finale` is true. Returns seconds.
     play(ctx, index, finale) {
-      const r = rigFor(ctx), t = ctx.currentTime + 0.04;
-      const clip = clips[finale ? FINALE : ((Math.floor(index) % FINALE) + FINALE) % FINALE];
-      hush(r, t);
-      const bus = gain(ctx, 1), mix = gain(ctx, 0.9), wet = gain(ctx, 0.28), echo = ctx.createConvolver(), limit = ctx.createDynamicsCompressor();
-      limit.threshold.value = -14; limit.knee.value = 8; limit.ratio.value = 4; limit.attack.value = 0.004; limit.release.value = 0.2;
-      echo.buffer = r.hall; wet.connect(echo); echo.connect(mix);
-      mix.connect(limit); limit.connect(bus); bus.connect(ctx.destination);
-      const dur = clip.play(ctx, t, mix, wet);
-      bus.gain.setValueAtTime(1, t + dur - 0.3); bus.gain.linearRampToValueAtTime(0, t + dur);
-      r.bus = bus;
-      return dur + 0.04;
+      const idx = pickIdx(index, finale);
+      if (live) fadeOut(live, live.ctx);
+      if (!OAC) return playLive(ctx, idx);
+      const me = { ctx }; live = me;
+      const ready = renders.get(ctx) && renders.get(ctx)[idx];
+      rendered(ctx, idx).then(r => {
+        if (live !== me || !r) return;
+        const src = ctx.createBufferSource(), g = gain(ctx, 1), t = ctx.currentTime + 0.02;
+        src.buffer = r.buf; src.connect(g); g.connect(ctx.destination); src.start(t);
+        g.gain.setValueAtTime(1, t + r.dur - 0.3); g.gain.linearRampToValueAtTime(0, t + r.dur);
+        me.g = g;
+      });
+      return lengthOf(idx) + (ready ? 0.05 : 0.6);
     },
-    stop() { if (rig) hush(rig, rig.ctx.currentTime); }
+    // Render every clip in the background, one at a time, so each is ready the moment it is needed.
+    warm(ctx) {
+      if (!OAC || warming) return;
+      const order = [0, 1, 2, FINALE].concat(clips.map((_, i) => i).filter(i => i > 2 && i !== FINALE));
+      warming = order.reduce((p, idx) => p.then(() => rendered(ctx, idx)).then(() => new Promise(r => setTimeout(r, 400))), Promise.resolve());
+    },
+    stop() { if (live) fadeOut(live, live.ctx); live = null; },
+    // for tests: the rendered buffer of a clip, as a promise of { buf, dur }
+    render(ctx, index, finale) { return rendered(ctx, pickIdx(index, finale)); }
   };
 })();
 </script>
 <script>
 /* =====================================================================
-   4. JIGSAW PUZZLE — cuts any picture into interlocking pieces and animates them.
-   Shared by every game; it knows nothing about questions or scoring.
+   4. JIGSAW PUZZLE (Thanksgiving version) — cuts any picture into interlocking pieces and animates them.
+   Same interface as the shared puzzle.js, with livelier motion: a piece lifts off the pile with a shadow,
+   flies in on an arc, overshoots a hair and snaps home with a glint; a miss jiggles a piece loose first;
+   a finished picture loses its seams, a warm sheen sweeps across it and leaves drift past before the
+   pieces float back to the pile (explode()). gentle = true tells the engine not to shake the panel.
      const p = Puzzle.create(hostElement, { art, cols, rows, layout, placed, reduced });
      p.place(i)    piece i flies from the pile into the picture
      p.remove(i)   piece i pops back out to the pile
@@ -2528,6 +2806,7 @@ const Puzzle = (function () {
   }
   const easeInOut = t => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
   const easeOut = t => 1 - Math.pow(1 - t, 3);
+  const easeOutBack = t => { const c = 1.5; return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); };
 
   function create(host, o) {
     const art = o.art, cols = o.cols, rows = o.rows, n = cols * rows, W = art.width, H = art.height, pw = W / cols, ph = H / rows;
@@ -2571,8 +2850,14 @@ const Puzzle = (function () {
       '<g transform="translate(' + board.x + ' ' + board.y + ')"><rect class="pz-board" x="-5" y="-5" width="' + (W + 10) + '" height="' + (H + 10) + '" rx="8"/>' +
       '<path class="pz-slot" d="' + paths.join('') + '"/></g>' +
       '<circle class="pz-flash" cx="' + (board.x + W / 2) + '" cy="' + (board.y + H / 2) + '" r="12"/>' +
+      '<linearGradient id="' + uid + '-sheen" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#fff6dc" stop-opacity="0"/><stop offset=".5" stop-color="#fff6dc" stop-opacity=".55"/><stop offset="1" stop-color="#fff6dc" stop-opacity="0"/></linearGradient>' +
+      '<clipPath id="' + uid + '-board"><rect x="' + board.x + '" y="' + board.y + '" width="' + W + '" height="' + H + '"/></clipPath>' +
       '<g class="pz-pieces">' + paths.map((d, i) =>
         '<g class="pz-pc"><g clip-path="url(#' + uid + '-c' + i + ')"><use href="#' + uid + '-art"/></g><path class="pz-edge" d="' + d + '"/></g>').join('') + '</g>' +
+      '<rect class="pz-glowframe" x="' + (board.x - 4) + '" y="' + (board.y - 4) + '" width="' + (W + 8) + '" height="' + (H + 8) + '" rx="8" fill="none" stroke="#ffd27a" stroke-width="5" opacity="0"/>' +
+      '<g clip-path="url(#' + uid + '-board)"><rect class="pz-sheen" x="0" y="' + (board.y - 40) + '" width="110" height="' + (H + 80) + '" fill="url(#' + uid + '-sheen)" opacity="0"/>' +
+      Array.from({ length: 10 }, (_, k) => '<g class="pz-leaf" opacity="0"><path d="M0-6C4.6-4.6 6 0 0 6C-6 0-4.6-4.6 0-6Z" fill="' + ['#c8642a', '#e0a23a', '#a8441e', '#d8862e', '#b84a22'][k % 5] + '"/><path d="M0-5.4V5.4" stroke="#5a2a10" stroke-width=".6" opacity=".5"/></g>').join('') + '</g>' +
+      '<g class="pz-glint" opacity="0"><path d="M0-9L1.6-1.6L9 0L1.6 1.6L0 9L-1.6 1.6L-9 0L-1.6-1.6Z" fill="#fffbe8"/></g>' +
       '</svg>';
     // the picture never changes: draw it once as an image, so each piece does not redraw every shape on every frame
     if (typeof Paint !== 'undefined' && Paint.raster) {
@@ -2581,7 +2866,9 @@ const Puzzle = (function () {
         if (url && g) g.innerHTML = '<image href="' + url + '" width="' + W + '" height="' + H + '"/>';
       });
     }
-    const layer = host.querySelector('.pz-pieces'), flash = host.querySelector('.pz-flash');
+    const layer = host.querySelector('.pz-pieces'), flash = host.querySelector('.pz-flash'), svgEl = host.querySelector('svg');
+    const sheen = host.querySelector('.pz-sheen'), frameG = host.querySelector('.pz-glowframe'), glintEl = host.querySelector('.pz-glint'), leafEls = Array.from(host.querySelectorAll('.pz-leaf'));
+    const slotEl = host.querySelector('.pz-slot');
     Array.from(layer.children).forEach((el, i) => { pieces[i].el = el; });
 
     function setPose(p, pose) {
@@ -2612,7 +2899,20 @@ const Puzzle = (function () {
         if (!raf) raf = requestAnimationFrame(frame);
       });
     }
-    function stopAll() { const all = Array.from(tweens.values()); tweens.clear(); all.forEach(tw => tw.done()); }
+    function stopAll() { const all = Array.from(tweens.values()); tweens.clear(); all.forEach(tw => tw.done()); fx.forEach(tw => { tw.fn(1); tw.done(); }); fx.clear(); }
+    // effects that are not piece moves (sheen, leaves, glints): fn(t) with t from 0 to 1
+    const fx = new Set();
+    let fxRaf = null;
+    function fxFrame(now) {
+      fxRaf = null;
+      fx.forEach(tw => { if (now < tw.start) return; const t = Math.min(1, (now - tw.start) / tw.dur); tw.fn(t); if (t >= 1) { fx.delete(tw); tw.done(); } });
+      if (fx.size && !dead) fxRaf = requestAnimationFrame(fxFrame);
+    }
+    function effect(dur, fn, delay) {
+      if (reduced || dead) { fn(1); return Promise.resolve(); }
+      return new Promise(done => { fx.add({ start: performance.now() + (delay || 0), dur, fn, done }); if (!fxRaf) fxRaf = requestAnimationFrame(fxFrame); });
+    }
+    const lift = (p, on) => p.el.classList.toggle('pz-lift', !!on);
     const front = p => layer.appendChild(p.el);
 
     // ---- public actions ----
@@ -2624,38 +2924,60 @@ const Puzzle = (function () {
     }
     function place(i, delay) {
       const p = pieces[i]; p.placed = true; front(p);
-      return animate(p, p.home, 720, { lift: 0.4, arc: 26, delay: delay || 0 }).then(() => {
-        if (dead || !p.placed) return;
-        layer.insertBefore(p.el, layer.firstChild);          // placed pieces sit underneath anything still flying
-        p.el.classList.remove('pz-snap'); void p.el.getBoundingClientRect(); p.el.classList.add('pz-snap');
-      });
+      const h = p.heap, hm = p.home;
+      // lifted off the pile (a little bigger, with a shadow), flown home on an arc while it turns upright,
+      // a hair past and back (it "drops in"), then the edge flashes and a glint winks on it
+      return animate(p, { x: h.x, y: h.y - 8, rot: h.rot * 0.7, s: h.s * 1.25 }, 180, { delay: delay || 0, ease: easeOut })
+        .then(() => { lift(p, true); return animate(p, { x: hm.x, y: hm.y, rot: 0, s: 1.06 }, 640, { arc: 34, ease: easeInOut }); })
+        .then(() => animate(p, hm, 200, { ease: easeOutBack }))
+        .then(() => {
+          lift(p, false);
+          if (dead || !p.placed) return;
+          layer.insertBefore(p.el, layer.firstChild);          // placed pieces sit underneath anything still flying
+          p.el.classList.remove('pz-snap'); void p.el.getBoundingClientRect(); p.el.classList.add('pz-snap');
+          const gx = hm.x + pw * 0.22, gy = hm.y - ph * 0.22;
+          return effect(520, t => { glintEl.setAttribute('opacity', f(Math.sin(Math.PI * t))); glintEl.setAttribute('transform', 'translate(' + f(gx) + ' ' + f(gy) + ') rotate(' + f(90 * t) + ') scale(' + f(0.3 + 0.8 * Math.sin(Math.PI * t)) + ')'); });
+        });
     }
     function remove(i, delay) {
       const p = pieces[i]; p.placed = false; p.el.classList.remove('pz-snap'); front(p);
-      return animate(p, p.heap, 760, { lift: 0.3, arc: 34, delay: delay || 0 });
+      const hm = p.home;
+      // it jiggles loose, pops up, and tumbles back to the pile
+      return animate(p, { x: hm.x, y: hm.y, rot: 0, s: 1 }, 0)
+        .then(() => effect(360, t => setPose(p, { x: hm.x + Math.sin(t * 6 * Math.PI) * 2.2 * (1 - t), y: hm.y, rot: Math.sin(t * 5 * Math.PI) * 7, s: 1 }), delay || 0))
+        .then(() => { lift(p, true); return animate(p, { x: hm.x, y: hm.y - 16, rot: 10, s: 1.1 }, 200, { ease: easeOut }); })
+        .then(() => animate(p, p.heap, 720, { arc: 30, ease: easeInOut }))
+        .then(() => lift(p, false));
     }
     function explode() {
       stopAll();
       pieces.forEach(p => { p.placed = false; p.el.classList.remove('pz-snap'); setPose(p, p.home); });
       if (reduced) { pieces.forEach(p => setPose(p, p.heap)); return Promise.resolve(); }
-      const mx = board.x + W / 2, my = board.y + H / 2, r2 = rng(Date.now() & 0xffff);
-      flash.classList.remove('go'); void flash.getBoundingClientRect(); flash.classList.add('go');
-      return Promise.all(pieces.map(p => {
-        let dx = p.home.x - mx, dy = p.home.y - my;
-        const len = Math.hypot(dx, dy) || 1, far = 120 + r2() * 110, ang = (r2() - 0.5) * 0.9;
-        dx /= len; dy /= len;
-        const bx = dx * Math.cos(ang) - dy * Math.sin(ang), by = dx * Math.sin(ang) + dy * Math.cos(ang);
-        front(p);
-        const burst = { x: p.home.x + bx * far, y: p.home.y + by * far, rot: (r2() - 0.5) * 520, s: 1.05 + r2() * 0.3 };
-        return animate(p, burst, 460, { ease: easeOut })
-          .then(() => animate(p, Object.assign({}, p.heap, { rot: p.heap.rot + (burst.rot > 0 ? 360 : -360) }), 900, { delay: 120 + r2() * 320, arc: 30 }))
-          .then(() => { if (!dead) setPose(p, p.heap); });
-      })).then(() => undefined);
+      const r2 = rng(Date.now() & 0xffff);
+      // 1. the seams melt away, so it looks like one picture, and the frame glows warm
+      const seams = effect(700, t => { layer.querySelectorAll('.pz-edge').forEach(e => e.style.opacity = f(1 - t)); slotEl.style.opacity = f(1 - t); });
+      const glow = effect(3600, t => frameG.setAttribute('opacity', f(Math.min(1, t * 5) * (0.55 + 0.25 * Math.sin(t * 14)) * (t > 0.85 ? (1 - t) / 0.15 : 1))), 200);
+      // 2. a warm sheen sweeps across it, twice
+      const sweep = effect(2200, t => { const c = (t * 2) % 1; sheen.setAttribute('opacity', f(Math.sin(Math.PI * c) * 0.9)); sheen.setAttribute('transform', 'translate(' + f(board.x - 120 + c * (W + 240)) + ' 0) skewX(-18)'); }, 500);
+      // 3. leaves drift down across the picture
+      const fall = Promise.all(leafEls.map((l, k) => {
+        const x0 = board.x + 10 + r2() * (W - 20), drift = (r2() - 0.5) * 60, spin = (r2() < 0.5 ? -1 : 1) * (200 + r2() * 300), sz = 0.8 + r2() * 0.6;
+        return effect(2600 + r2() * 900, t => {
+          l.setAttribute('opacity', f(Math.min(1, t * 6) * (t > 0.85 ? (1 - t) / 0.15 : 1)));
+          l.setAttribute('transform', 'translate(' + f(x0 + drift * t + Math.sin(t * 7 + k) * 10) + ' ' + f(board.y - 12 + t * (H + 24)) + ') rotate(' + f(spin * t) + ') scale(' + f(sz * (0.4 + 0.6 * Math.abs(Math.cos(t * 5 + k)))) + ' ' + f(sz) + ')');
+        }, 600 + k * 170);
+      }));
+      // 4. then the pieces float gently back to the pile, a few at a time, and the seams come back
+      const back = new Promise(res => setTimeout(res, dead ? 0 : 3900)).then(() => {
+        layer.querySelectorAll('.pz-edge').forEach(e => e.style.opacity = ''); slotEl.style.opacity = '';
+        return Promise.all(pieces.map((p, k) => { front(p); return animate(p, Object.assign({}, p.heap, { rot: p.heap.rot + (r2() < 0.5 ? -180 : 180) }), 900, { delay: k * 45 + r2() * 160, arc: 40, lift: 0.15 }).then(() => { if (!dead) setPose(p, p.heap); }); }));
+      });
+      return Promise.all([seams, glow, sweep, fall, back]).then(() => undefined);
     }
-    function destroy() { dead = true; if (raf) cancelAnimationFrame(raf); stopAll(); }
+    function destroy() { dead = true; if (raf) cancelAnimationFrame(raf); if (fxRaf) cancelAnimationFrame(fxRaf); stopAll(); }
 
     sync(o.placed || []);
-    return { count: n, place, remove, explode, sync, destroy, placedList: () => pieces.filter(p => p.placed).map(p => p.i) };
+    return { count: n, place, remove, explode, sync, destroy, gentle: true, finaleMs: 5600, placedList: () => pieces.filter(p => p.placed).map(p => p.i) };
   }
   return { create };
 })();
@@ -2759,15 +3081,36 @@ const Scenes = (function () {
     function place(i, delay) { done[i] = true; const k = done.filter(Boolean).length; return wait(delay || 0).then(() => api.place(k - 1, k)); }
     function remove(i, delay) { done[i] = false; const k = done.filter(Boolean).length; return wait(delay || 0).then(() => api.remove(k, k)); }
     function explode() { stopAll(); for (let i = 0; i < n; i++) done[i] = true; api.sync(done.slice()); return api.finale().then(() => { for (let i = 0; i < n; i++) done[i] = false; }); }
-    function destroy() { dead = true; if (raf) cancelAnimationFrame(raf); stopAll(); }
+    // ambient motion while the scene sits on screen (clouds, grass, steam, ripples...), about 30 frames a second;
+    // it pauses while the page is hidden and is off entirely for reduced motion
+    let amb = null, ambLast = 0;
+    function ambLoop(now) {
+      amb = null; if (dead) return;
+      if (!document.hidden && now - ambLast > 32) { ambLast = now; try { api.ambient(now / 1000); } catch (e) { /* keep going */ } }
+      amb = requestAnimationFrame(ambLoop);
+    }
+    if (!reduced && api.ambient) amb = requestAnimationFrame(ambLoop);
+    function destroy() { dead = true; if (raf) cancelAnimationFrame(raf); if (amb) cancelAnimationFrame(amb); stopAll(); }
     sync(o.placed || []);
-    return { count: n, place, remove, explode, sync, destroy, placedList: () => done.map((d, i) => (d ? i : -1)).filter(i => i >= 0) };
+    return { count: n, place, remove, explode, sync, destroy, finaleMs: 7200, placedList: () => done.map((d, i) => (d ? i : -1)).filter(i => i >= 0) };
   }
 
   // faint wind streaks, used by gust()
   const GUSTS = '<g class="sc-gust" opacity="0" fill="none" stroke="#fffaf0" stroke-linecap="round">' +
     '<path d="M0 0C30-6 60 6 110 -2" stroke-width="1.4"/><path d="M30 22C60 16 90 28 150 20" stroke-width="1.1" opacity=".8"/>' +
     '<path d="M-20 44C10 38 50 50 90 42" stroke-width="1" opacity=".7"/><path d="M60 -18C80-22 100-14 130-20" stroke-width=".9" opacity=".6"/></g>';
+
+  // small shared pieces: a drifting cloud, a twinkling star, a tuft of grass, a leaf
+  const CLOUD = (k, y) => '<g class="sc-cloud" data-k="' + k + '" data-y="' + y + '"><ellipse rx="24" ry="5.5" fill="#fffaf0" opacity=".5"/><ellipse cx="9" cy="-4" rx="13" ry="5.5" fill="#fffaf0" opacity=".45"/><ellipse cx="-10" cy="-2" rx="9" ry="4" fill="#fffaf0" opacity=".4"/></g>';
+  const STAR = (x, y) => '<g class="sc-star" transform="translate(' + x + ' ' + y + ')" opacity="0"><path d="M0-3.2L.7-.7L3.2 0L.7.7L0 3.2L-.7.7L-3.2 0L-.7-.7Z" fill="#fff8e0"/></g>';
+  const TUFT = (x, y, c) => '<g class="sc-tuft" data-x="' + x + '" data-y="' + y + '" transform="translate(' + x + ' ' + y + ')"><path d="M0 0q-2-8-7-14M0 0q1-10 1-18M0 0q3-7 8-12M0 0q-1-6-3-10" stroke="' + (c || '#6e7a34') + '" stroke-width="1.6" fill="none" stroke-linecap="round"/></g>';
+  const LEAF = (c, k) => '<g class="' + k + '" opacity="0"><path d="M0-4.4C3.4-3.4 4.4 0 0 4.4C-4.4 0-3.4-3.4 0-4.4Z" fill="' + c + '"/><path d="M0-4V4" stroke="#5a2a10" stroke-width=".5" opacity=".5"/></g>';
+  const GLINT = '<path d="M0-7L1.3-1.3L7 0L1.3 1.3L0 7L-1.3 1.3L-7 0L-1.3-1.3Z" fill="#fff8e0"/>';
+  const easeOutBack = t => { const c = 1.6; return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); };
+  // drifting clouds: each crosses slowly and wraps around
+  function drift(clouds, T) { clouds.forEach(c => { const k = +c.dataset.k, sp = 3 + k * 1.3; c.setAttribute('transform', 'translate(' + f(((T * sp + k * 150) % 380) - 40) + ' ' + c.dataset.y + ')'); }); }
+  function sway(tufts, T, amt) { tufts.forEach((g, k) => g.setAttribute('transform', 'translate(' + g.dataset.x + ' ' + g.dataset.y + ') rotate(' + f(Math.sin(T * 1.5 + k * 0.9) * (amt || 4) + Math.sin(T * 3.7 + k) * 1.2) + ')')); }
+  function twinkle(stars, T, on) { stars.forEach((st, k) => st.setAttribute('opacity', f(on * (0.55 + 0.45 * Math.sin(T * 2.4 + k * 1.7))))); }
 
   // a leaf drifting down: sideways sway, a slow tumble, and a flip that narrows it now and then
   function fallPose(a, b, t, m) {
@@ -2843,11 +3186,18 @@ const Scenes = (function () {
     const candle = x => '<path d="M' + (x - 7) + ' 150h14l-2 4h-10Z" fill="' + g('brass') + '"/><path d="M' + (x - 2) + ' 128h4v22h-4Z" fill="' + g('brass') + '"/>' +
       '<path d="M' + (x - 3) + ' 96h6v32h-6Z" fill="#f4ecd8"/><path d="M' + (x - 3) + ' 96h2v32h-2Z" fill="#ffffff" opacity=".5"/><path d="M' + x + ' 96v-4" stroke="#3a2a1a" stroke-width="1.2"/>';
     bg += candle(136) + candle(164);
+    const leafC = ['#c8642a', '#e0a23a', '#a8441e', '#d8862e', '#b8562a'];
     const svg =
+      '<path class="sc-beam" d="M118 18L300 96V146H160L118 112Z" fill="#ffe9b8" opacity=".07"/>' +
+      '<clipPath id="' + uid + '-wc2"><path d="M20 14H118V112H20Z"/></clipPath><g clip-path="url(#' + uid + '-wc2)">' + leafC.map(c => LEAF(c, 'sc-wleaf')).join('') + '</g>' +
       '<g class="sc-dishes">' + SPOT.map(([x, y, kind], i) => '<g data-k="' + i + '"><g class="sc-mv">' + DISH[kind]() + '</g></g>').join('') + '</g>' +
       '<g class="sc-steams">' + SPOT.map(([x, y, kind], i) => (ORDER_HOT[kind] ? '<g transform="translate(' + x + ' ' + (y - (kind === 'turkey' ? 28 : 10)) + ')">' + steamFor(i) + '</g>' : '')).join('') + '</g>' +
       '<g class="sc-glow" opacity="0"><rect width="300" height="240" fill="' + g('warm') + '"/></g>' +
-      '<g class="sc-flames" opacity="0">' + [136, 164].map(x => '<g transform="translate(' + x + ' 90)"><ellipse rx="16" ry="18" fill="' + g('halo') + '"/><g class="sc-flame"><path d="M0 2C-3.4 0-3.6-5 0-12C3.6-5 3.4 0 0 2Z" fill="' + g('flame') + '"/><path d="M0 1C-1.4 0-1.6-3 0-6C1.6-3 1.4 0 0 1Z" fill="#fffbe8"/></g></g>').join('') + '</g>' +
+      SPOT.map(() => '<g class="sc-glint" opacity="0">' + GLINT + '</g>').join('') +
+      '<g class="sc-flames">' + [136, 164].map(x => '<g class="sc-candle" opacity="0" transform="translate(' + x + ' 90)"><ellipse rx="16" ry="18" fill="' + g('halo') + '"/><g class="sc-flame"><path d="M0 2C-3.4 0-3.6-5 0-12C3.6-5 3.4 0 0 2Z" fill="' + g('flame') + '"/><path d="M0 1C-1.4 0-1.6-3 0-6C1.6-3 1.4 0 0 1Z" fill="#fffbe8"/></g></g>').join('') + '</g>' +
+      '<g class="sc-match" opacity="0"><path d="M0 0L14-10" stroke="#e2c08a" stroke-width="2.2" stroke-linecap="round"/><circle cx="14" cy="-10" r="1.9" fill="#8a2a1a"/>' +
+      '<g class="sc-mflame"><path d="M14-10C11.6-11.5 11.8-15.5 14-19.5C16.2-15.5 16.4-11.5 14-10Z" fill="' + g('flame') + '"/><circle cx="14" cy="-13" r="5" fill="' + g('halo') + '"/></g></g>' +
+      Array.from({ length: 14 }, (_, k) => '<circle class="sc-mote" r="' + (1.6 + (k % 3) * 0.5) + '" fill="#fff0c4" opacity="0"/>').join('') +
       '<g class="sc-banner" opacity="0"><path d="M64 12H236L226 26L236 40H64L74 26Z" fill="' + g('ribbon') + '"/><path d="M64 12H236" stroke="#f2c47a" stroke-width="1.2" opacity=".6"/>' +
       '<text x="150" y="32" text-anchor="middle" font-family="Georgia, \'Times New Roman\', serif" font-style="italic" font-size="17" fill="#fff6e4">Give thanks</text></g>';
     return {
@@ -2864,47 +3214,95 @@ const Scenes = (function () {
         K.shadeDefs(uid + '-shade') + K.grainDefs(uid + '-grain'),
       bg, svg,
       init(x) {
-        const els = x.q('.sc-dishes > g'), steams = x.q('.sc-steam'), glow = x.svg.querySelector('.sc-glow'), flames = x.svg.querySelector('.sc-flames'), banner = x.svg.querySelector('.sc-banner');
-        const flameEls = x.q('.sc-flame');
+        const els = x.q('.sc-dishes > g'), steams = x.q('.sc-steam'), glow = x.svg.querySelector('.sc-glow'), banner = x.svg.querySelector('.sc-banner');
+        const candles = x.q('.sc-candle'), flameEls = x.q('.sc-flame'), match = x.svg.querySelector('.sc-match'), mflame = x.svg.querySelector('.sc-mflame');
+        const glints = x.q('.sc-glint'), motes = x.q('.sc-mote'), wleaves = x.q('.sc-wleaf'), beam = x.svg.querySelector('.sc-beam');
         const home = i => ({ x: SPOT[i][0], y: SPOT[i][1], s: 1, o: 1 }), up = i => ({ x: SPOT[i][0], y: SPOT[i][1] - 70, s: 0.92, o: 0 });
         const steamOf = i => steams.find(s => +s.dataset.d === i);
+        const on = new Array(n).fill(false), busy = new Set();
+        let lit = 0, fin = false;
         function sync(done) {
-          els.forEach((el, i) => x.pose(el, done[i] ? home(i) : up(i)));
+          els.forEach((el, i) => { x.pose(el, done[i] ? home(i) : up(i)); on[i] = !!done[i]; });
+          busy.clear(); fin = false; lit = 0;
           steams.forEach(s => s.setAttribute('opacity', '0'));
-          [glow, flames, banner].forEach(e => e.setAttribute('opacity', '0'));
+          [glow, banner, match].concat(candles, glints, motes).forEach(e => e.setAttribute('opacity', '0'));
         }
         function puff(i) {
           const s = steamOf(i);
           if (!s) return Promise.resolve();
           return x.tween(1500, t => { s.setAttribute('opacity', f(Math.sin(Math.PI * t) * 0.9)); s.setAttribute('transform', 'translate(' + f(Math.sin(t * 6) * 1.5) + ' ' + f(-10 * t) + ')'); });
         }
+        // a little star of light glints on a dish as it is set down
+        function glint(i) {
+          const g = glints[i]; if (!g) return Promise.resolve();
+          const gx = SPOT[i][0] + (i % 2 ? 10 : -12), gy = SPOT[i][1] - 12;
+          return x.tween(560, t => { g.setAttribute('opacity', f(Math.sin(Math.PI * t))); g.setAttribute('transform', 'translate(' + gx + ' ' + gy + ') rotate(' + f(90 * t) + ') scale(' + f(0.3 + 0.9 * Math.sin(Math.PI * t)) + ')'); });
+        }
         function place(i) {
-          const a = up(i), b = home(i), el = els[i];
-          // carried in from above, set down with a small settle, then a wisp of steam from hot dishes
-          return x.tween(760, t => { const e = x.easeOut(t); x.pose(el, { x: b.x, y: lerp(a.y, b.y, e), s: lerp(0.92, 1, e), o: Math.min(1, t * 2.2) }); })
-            .then(() => x.tween(220, t => x.pose(el, { x: b.x, y: b.y, s: 1, sy: 1 - 0.05 * Math.sin(Math.PI * t), o: 1 })))
-            .then(() => puff(i));
+          const b = home(i), el = els[i], side = SPOT[i][0] < 150 ? -1 : 1, a = { x: b.x + side * 70, y: b.y - 90 };
+          busy.add(i);
+          // carried in from the side in an easy arc, tipped a little, set down with a soft bounce, a glint and a wisp of steam
+          return x.tween(820, t => { const e = x.easeOut(t); x.pose(el, { x: lerp(a.x, b.x, e), y: lerp(a.y, b.y, e) - 26 * Math.sin(Math.PI * Math.min(1, t * 1.1)) * (1 - t), rot: side * 9 * (1 - e), s: lerp(0.9, 1, e), o: Math.min(1, t * 3) }); })
+            .then(() => x.tween(240, t => x.pose(el, { x: b.x, y: b.y, s: 1 + 0.03 * Math.sin(Math.PI * t), sy: 1 - 0.08 * Math.sin(Math.PI * t), o: 1 })))
+            .then(() => x.tween(200, t => x.pose(el, { x: b.x, y: b.y - 3 * Math.sin(Math.PI * t), s: 1, o: 1 })))
+            .then(() => { on[i] = true; busy.delete(i); return Promise.all([glint(i), puff(i)]); });
         }
         function remove(i) {
-          const a = home(i), el = els[i];
-          // lifted and carried back toward the kitchen (off to the side), fading as it goes
-          const side = SPOT[i][0] < 150 ? -1 : 1;
-          return x.tween(260, t => x.pose(el, { x: a.x, y: a.y - 8 * x.easeOut(t), s: 1, o: 1 }))
-            .then(() => x.tween(820, t => { const e = x.easeIn(t); x.pose(el, { x: a.x + side * 80 * e, y: a.y - 8 - 40 * e, s: 1 - 0.1 * e, o: 1 - e }); }))
-            .then(() => x.pose(el, up(i)));
+          const a = home(i), el = els[i], side = SPOT[i][0] < 150 ? -1 : 1;
+          busy.add(i); on[i] = false;
+          // a wobble, then lifted and carried back toward the kitchen, fading as it goes
+          return x.tween(380, t => x.pose(el, { x: a.x, y: a.y, rot: 7 * Math.sin(t * 3 * Math.PI) * (1 - t), s: 1, o: 1 }))
+            .then(() => x.tween(240, t => x.pose(el, { x: a.x, y: a.y - 10 * x.easeOut(t), s: 1, o: 1 })))
+            .then(() => x.tween(820, t => { const e = x.easeIn(t); x.pose(el, { x: a.x + side * 90 * e, y: a.y - 10 - 40 * e, rot: side * 6 * e, s: 1 - 0.1 * e, o: 1 - e }); }))
+            .then(() => { x.pose(el, up(i)); busy.delete(i); });
         }
         function finale() {
-          // the candles are lit, the room glows, steam rises from every hot dish, and a ribbon reads "Give thanks"
-          const light = x.tween(900, t => { flames.setAttribute('opacity', f(x.easeOut(t))); glow.setAttribute('opacity', f(x.easeInOut(t))); }, 300);
-          const flicker = x.tween(3400, t => flameEls.forEach((fl, k) => fl.setAttribute('transform', 'scale(' + f(1 + 0.08 * Math.sin(t * 40 + k * 2)) + ' ' + f(1 + 0.12 * Math.sin(t * 31 + k)) + ')')), 300);
-          const rise = steams.map((s, k) => x.tween(2600, t => {
-            const c = (t * 1.4 + k / 5) % 1;
-            s.setAttribute('opacity', f(Math.sin(Math.PI * c) * 0.9)); s.setAttribute('transform', 'translate(' + f(Math.sin(c * 5 + k) * 2) + ' ' + f(-14 * c) + ')');
-          }, 500 + k * 90));
-          const ribbon = x.tween(900, t => { banner.setAttribute('opacity', f(x.easeOut(t))); banner.setAttribute('transform', 'translate(0 ' + f(-10 * (1 - x.easeOut(t))) + ')'); }, 1300);
-          return Promise.all([light, flicker, ribbon].concat(rise)).then(() => x.wait(500));
+          // a match is struck and lights each candle, the room warms, steam rises from every hot dish,
+          // motes of light drift up, and a ribbon unfurls: "Give thanks"
+          fin = true;
+          const wick = k => ({ x: k ? 164 : 136, y: 92 });
+          const mpose = (p, o) => { match.setAttribute('transform', 'translate(' + f(p.x) + ' ' + f(p.y) + ')'); match.setAttribute('opacity', f(o)); };
+          const strike = x.tween(1900, t => {
+            const ms = t * 1900;
+            let p, o = 1;
+            if (ms < 260) { const e = x.easeOut(ms / 260); p = { x: lerp(96, wick(0).x - 14, e), y: lerp(140, wick(0).y + 10, e) }; o = ms / 260; }
+            else if (ms < 820) p = { x: wick(0).x - 14, y: wick(0).y + 10 };
+            else if (ms < 1120) { const e = x.easeInOut((ms - 820) / 300); p = { x: lerp(wick(0).x - 14, wick(1).x - 14, e), y: wick(0).y + 10 - 6 * Math.sin(Math.PI * e) }; }
+            else if (ms < 1480) p = { x: wick(1).x - 14, y: wick(1).y + 10 };
+            else { const e = (ms - 1480) / 420; p = { x: wick(1).x - 14 + 24 * e, y: wick(1).y + 10 + 30 * e }; o = 1 - e; }
+            mpose(p, o);
+            const fl = ms < 240 ? 0 : ms < 420 ? 1.5 * (ms - 240) / 180 : 1 + 0.1 * Math.sin(ms / 30);
+            mflame.setAttribute('transform', 'translate(14 -11) scale(' + f(fl) + ') translate(-14 11)');
+          }, 100);
+          const light = k => x.tween(420, t => { candles[k].setAttribute('opacity', f(x.easeOut(t))); if (t > 0.3) lit = Math.max(lit, k + 1); }, k ? 1180 : 560);
+          const warm = x.tween(1300, t => glow.setAttribute('opacity', f(x.easeInOut(t))), 700);
+          const hot = steams.map((s, k) => x.tween(5200, t => {
+            const c = (t * 5200 / 2300 + k / 5) % 1;
+            s.setAttribute('opacity', f(Math.sin(Math.PI * c) * 0.9 * Math.min(1, t * 6))); s.setAttribute('transform', 'translate(' + f(Math.sin(c * 5 + k) * 2.4) + ' ' + f(-20 * c) + ')');
+          }, 900 + k * 70));
+          const rise = x.tween(5000, t => motes.forEach((m, k) => {
+            const c = (t * 5000 / (2600 + (k % 4) * 400) + k / motes.length) % 1, mx = 30 + ((k * 53) % 240) + Math.sin(c * 6 + k) * 6;
+            m.setAttribute('transform', 'translate(' + f(mx) + ' ' + f(210 - c * 170) + ')'); m.setAttribute('opacity', f(Math.sin(Math.PI * c) * 0.85 * Math.min(1, t * 4)));
+          }), 1300);
+          const ribbon = x.tween(1100, t => { const e = easeOutBack(t); banner.setAttribute('opacity', f(Math.min(1, t * 2.5))); banner.setAttribute('transform', 'translate(150 26) scale(' + f(Math.max(0.02, e)) + ' ' + f(0.7 + 0.3 * Math.min(1, t * 2)) + ') translate(-150 -26)'); }, 2100);
+          return Promise.all([strike, light(0), light(1), warm, ribbon, rise].concat(hot)).then(() => x.wait(500));
         }
-        return { sync, place, remove, finale };
+        function ambient(T) {
+          // leaves drift past the window, the sunlight shimmers, hot dishes give off a wisp now and then, lit candles flicker
+          wleaves.forEach((l, k) => {
+            const c = (T * (0.07 + k * 0.012) + k * 0.23) % 1;
+            l.setAttribute('opacity', f(Math.min(1, Math.sin(Math.PI * c) * 3) * 0.9));
+            l.setAttribute('transform', 'translate(' + f(28 + ((k * 23) % 82) + Math.sin(T * 1.4 + k * 2) * 8) + ' ' + f(6 + c * 112) + ') rotate(' + f(T * 60 * (k % 2 ? 1 : -1) + k * 40) + ') scale(' + f(0.6 + 0.4 * Math.abs(Math.cos(T * 1.7 + k))) + ' 1)');
+          });
+          beam.setAttribute('opacity', f(0.07 + 0.03 * Math.sin(T * 0.6)));
+          if (!fin) on.forEach((d, i) => {
+            const s = steamOf(i); if (!s || !d || busy.has(i)) return;
+            const c = (T * 0.32 + i * 0.37) % 1, show = c < 0.5 ? Math.sin(Math.PI * c * 2) : 0;
+            s.setAttribute('opacity', f(show * 0.55)); s.setAttribute('transform', 'translate(' + f(Math.sin(T * 2 + i) * 1.5) + ' ' + f(-16 * c) + ')');
+          });
+          if (lit) flameEls.forEach((fl, k) => fl.setAttribute('transform', 'scale(' + f(1 + 0.08 * Math.sin(T * 13 + k * 2) + 0.04 * Math.sin(T * 31 + k)) + ' ' + f(1 + 0.12 * Math.sin(T * 9.7 + k) + 0.05 * Math.sin(T * 27)) + ')'));
+        }
+        return { sync, place, remove, finale, ambient };
       }
     };
   };
@@ -2941,12 +3339,18 @@ const Scenes = (function () {
       '<path d="M8-26v-12" stroke="#4a4440" stroke-width="3"/><path d="M-3-24h10v8h-10Z" fill="#9fb8c8" opacity=".7"/>' +
       '<path d="M-24-10h34" stroke="#f08a6a" stroke-width="1.4" opacity=".5"/></g>' +
       wheel(TR.x - 14, TR.y + 4, 16, 'sc-w3') + wheel(TR.x + 14, TR.y + 10, 8, 'sc-w4');
-    const svg =
+    const svg = CLOUD(0, 34) + CLOUD(1, 52) + CLOUD(2, 22) +
       '<g class="sc-rig">' + K.shadow(uid + '-shade', WAGON.x + 30, WAGON.y + 26, 110, 7) + wagonBack +
       '<g class="sc-load">' + BED.map((_, k) => '<g data-k="' + k + '">' + pumpkin(k, R) + '</g>').join('') + '</g>' +
       wagonFront + tractor + '</g>' +
       '<g class="sc-field">' + FIELD.map((_, k) => '<g data-k="' + k + '">' + pumpkin(k, R) + '</g>').join('') + '</g>' +
-      '<g class="sc-dusk" opacity="0"><rect width="300" height="240" fill="url(#' + uid + '-dusk)"/></g>' + land.light;
+      Array.from({ length: 10 }, () => '<circle class="sc-puff" r="5" fill="#ebe5da" opacity="0"/>').join('') +
+      Array.from({ length: 6 }, () => '<ellipse class="sc-dust" rx="7" ry="3" fill="#cdb48a" opacity="0"/>').join('') +
+      [6, 34, 58, 92, 126, 150, 214, 246, 282].map((tx, k) => TUFT(tx, 240 - (k % 2) * 3, k % 3 ? '#6e7a34' : '#869040')).join('') +
+      '<g class="sc-dusk" opacity="0"><rect width="300" height="240" fill="url(#' + uid + '-dusk)"/></g>' + land.light +
+      '<rect class="sc-barnwin" x="270.5" y="154" width="5" height="5" rx="1" fill="#ffd27a" opacity="0"/>' +
+      '<g class="sc-moon" opacity="0" transform="translate(150 84)"><circle r="14" fill="#fff2c8" opacity=".18"/><circle r="7.5" fill="#fff6dc"/><circle cx="2.4" cy="-1.6" r="1.6" fill="#e8dcbc" opacity=".7"/></g>' +
+      [[96, 26], [140, 14], [186, 34], [226, 18], [272, 40], [22, 30]].map(([sx, sy]) => STAR(sx, sy)).join('');
     // vines and leaves in the pumpkin patch, and a barn far off
     let bg = land.bg + '<g transform="translate(262 150)"><path d="M0 14V0L11-9L22 0V14Z" fill="#9c4a32"/><path d="M0 0L11-9L22 0" stroke="#e9dcc8" stroke-width="1" fill="none"/></g>';
     bg += '<path d="M0 214C30 204 60 222 100 210S150 200 170 214" stroke="#56662a" stroke-width="2" fill="none"/><path d="M0 232C40 224 90 240 150 228" stroke="#4e5d26" stroke-width="2" fill="none"/>';
@@ -2959,41 +3363,84 @@ const Scenes = (function () {
       bg, svg,
       init(x) {
         const inBed = x.q('.sc-load > g'), inField = x.q('.sc-field > g'), rig = x.svg.querySelector('.sc-rig'), dusk = x.svg.querySelector('.sc-dusk');
+        const puffs = x.q('.sc-puff'), dusts = x.q('.sc-dust'), clouds = x.q('.sc-cloud'), tufts = x.q('.sc-tuft'), stars = x.q('.sc-star');
+        const barnWin = x.svg.querySelector('.sc-barnwin'), moon = x.svg.querySelector('.sc-moon');
         const wheels = [['.sc-w1', 11], ['.sc-w2', 11], ['.sc-w3', 16], ['.sc-w4', 8]].map(([c, rad]) => [x.svg.querySelector(c), rad]);
         const wheelHome = wheels.map(([el]) => el.getAttribute('transform'));
         const bedP = k => ({ x: WAGON.x + BED[k][0], y: WAGON.y + BED[k][1] - R * 0.6, rot: (k * 23) % 30 - 15, s: 1, o: 1 });
         const fieldP = k => ({ x: FIELD[k][0], y: FIELD[k][1], rot: (k * 17) % 20 - 10, s: 1, o: 1 });
+        const STACK = { x: TR.x + 8, y: TR.y - 38 };
+        let driving = false, rigDip = 0, starsOn = 0, lastPuff = 0, pi = 0, di = 0;
+        const rigSet = (dx, dy) => rig.setAttribute('transform', 'translate(' + f(dx) + ' ' + f(dy) + ')');
+        // a puff of exhaust from the tractor's stack: it swells, drifts back and up, and fades
+        function puff(px, py, big, delay) {
+          const el = puffs[pi++ % puffs.length];
+          return x.tween(1500 * (big > 1 ? 1.2 : 1), t => { el.setAttribute('transform', 'translate(' + f(px - 18 * t) + ' ' + f(py - 26 * t) + ') scale(' + f((0.5 + 1.5 * t) * big) + ')'); el.setAttribute('opacity', f(0.75 * (1 - t) * Math.min(1, t * 8))); }, delay || 0);
+        }
+        // a little cloud of dust where a pumpkin lands
+        function dust(px, py) {
+          return Promise.all([-1, 1].map(sd => { const el = dusts[di++ % dusts.length]; return x.tween(650, t => { el.setAttribute('transform', 'translate(' + f(px + sd * 12 * x.easeOut(t)) + ' ' + f(py - 4 * t) + ') scale(' + f(0.4 + 1.2 * t) + ' ' + f(0.4 + 0.7 * t) + ')'); el.setAttribute('opacity', f(0.6 * (1 - t))); }); }));
+        }
         function sync(done) {
           inBed.forEach((el, k) => x.pose(el, Object.assign(bedP(k), { o: done[k] ? 1 : 0 })));
           inField.forEach((el, k) => x.pose(el, Object.assign(fieldP(k), { o: done[k] ? 0 : 1 })));
-          rig.setAttribute('transform', ''); wheels.forEach(([el], k) => el.setAttribute('transform', wheelHome[k])); dusk.setAttribute('opacity', '0');
+          driving = false; rigDip = 0; starsOn = 0; rigSet(0, 0);
+          wheels.forEach(([el], k) => el.setAttribute('transform', wheelHome[k])); dusk.setAttribute('opacity', '0');
+          [barnWin, moon].concat(puffs, dusts, stars).forEach(e => e.setAttribute('opacity', '0'));
         }
         function place(k) {
           const a = fieldP(k), b = bedP(k), el = inField[k];
-          // a little hop, then a high toss into the wagon bed, where it settles
-          return x.tween(240, t => x.pose(el, Object.assign({}, a, { y: a.y - 6 * Math.sin(Math.PI * t), sy: 1 - 0.1 * Math.sin(Math.PI * t) })))
-            .then(() => x.tween(900, t => { const e = x.easeInOut(t); x.pose(el, { x: lerp(a.x, b.x, e), y: lerp(a.y, b.y, t) - 70 * Math.sin(Math.PI * t), rot: lerp(a.rot, b.rot + 360, e), s: 1, o: 1 }); }))
-            .then(() => { x.pose(el, Object.assign(fieldP(k), { o: 0 })); x.pose(inBed[k], bedP(k)); return x.tween(220, t => x.pose(inBed[k], Object.assign(bedP(k), { y: bedP(k).y - 3 * Math.sin(Math.PI * t) }))); });
+          // a crouch and a hop, a high spinning toss into the wagon bed, the wagon bounces on its springs, and a little dust
+          return x.tween(260, t => x.pose(el, Object.assign({}, a, { y: a.y - 7 * Math.sin(Math.PI * t), sy: 1 - 0.14 * Math.sin(Math.PI * t * 2) * (t < 0.5 ? 1 : -0.6) })))
+            .then(() => x.tween(900, t => { const e = x.easeInOut(t); x.pose(el, { x: lerp(a.x, b.x, e), y: lerp(a.y, b.y, t) - 76 * Math.sin(Math.PI * t), rot: lerp(a.rot, b.rot + 360, e), s: 1 + 0.12 * Math.sin(Math.PI * t), o: 1 }); }))
+            .then(() => {
+              x.pose(el, Object.assign(fieldP(k), { o: 0 })); x.pose(inBed[k], bedP(k));
+              return Promise.all([
+                x.tween(320, t => { rigDip = 2.2 * Math.sin(Math.PI * t) * (1 - t * 0.5); if (!driving) rigSet(0, rigDip); }),
+                x.tween(260, t => x.pose(inBed[k], Object.assign(bedP(k), { y: bedP(k).y - 4 * Math.sin(Math.PI * t), sy: 1 - 0.1 * Math.sin(Math.PI * t) }))),
+                dust(b.x, WAGON.y - 2)
+              ]).then(() => { rigDip = 0; });
+            });
         }
         function remove(k) {
           const a = bedP(k), ground = { x: WAGON.x - 60, y: WAGON.y + 26 }, b = fieldP(k), el = inBed[k];
-          // tips off the back of the wagon, bounces, rolls away, and is back in the patch
-          return x.tween(560, t => x.pose(el, { x: lerp(a.x, ground.x, t), y: lerp(a.y, ground.y, x.easeIn(t)) - 26 * Math.sin(Math.PI * t), rot: a.rot - 220 * t, s: 1, o: 1 }))
-            .then(() => x.tween(200, t => x.pose(el, { x: ground.x - 6 * t, y: ground.y - 7 * Math.sin(Math.PI * t), rot: a.rot - 240, s: 1, o: 1 })))
-            .then(() => x.tween(900, t => x.pose(el, { x: lerp(ground.x - 6, ground.x - 50, x.easeOut(t)), y: ground.y + 4 * t, rot: a.rot - 240 - 400 * x.easeOut(t), s: 1, o: 1 - t })))
-            .then(() => { x.pose(el, Object.assign(bedP(k), { o: 0 })); return x.tween(500, t => x.pose(inField[k], Object.assign({}, b, { s: 0.2 + 0.8 * x.easeOut(t), o: t }))); });
+          // it teeters at the edge, tips off the back of the wagon, bounces twice in a puff of dust, rolls away, and is back in the patch
+          return x.tween(460, t => x.pose(el, Object.assign({}, a, { rot: a.rot + 14 * Math.sin(t * 3 * Math.PI) * (0.4 + t) })))
+            .then(() => x.tween(520, t => x.pose(el, { x: lerp(a.x, ground.x, t), y: lerp(a.y, ground.y, x.easeIn(t)) - 26 * Math.sin(Math.PI * t), rot: a.rot - 220 * t, s: 1, o: 1 })))
+            .then(() => { dust(ground.x, ground.y + 6); return x.tween(300, t => x.pose(el, { x: ground.x - 12 * t, y: ground.y - 12 * Math.sin(Math.PI * t), rot: a.rot - 260 * (1 + t * 0.3), s: 1, o: 1 })); })
+            .then(() => { dust(ground.x - 12, ground.y + 6); return x.tween(180, t => x.pose(el, { x: ground.x - 12 - 6 * t, y: ground.y - 4 * Math.sin(Math.PI * t), rot: a.rot - 340, s: 1, o: 1 })); })
+            .then(() => x.tween(900, t => x.pose(el, { x: lerp(ground.x - 18, ground.x - 60, x.easeOut(t)), y: ground.y + 4 * t, rot: a.rot - 340 - 400 * x.easeOut(t), s: 1, o: 1 - t })))
+            .then(() => { x.pose(el, Object.assign(bedP(k), { o: 0 })); return x.tween(500, t => x.pose(inField[k], Object.assign({}, b, { s: 0.2 + 0.8 * easeOutBack(t), o: Math.min(1, t * 2) }))); });
         }
         function finale() {
-          // the tractor pulls the full wagon off toward the barn as the evening light comes on
-          const dist = 330;
-          return x.tween(3200, t => {
-            const e = x.easeIn(Math.min(1, t * 1.15)), dx = dist * e;
-            rig.setAttribute('transform', 'translate(' + f(dx) + ' ' + f(-Math.abs(Math.sin(t * 40)) * 0.8) + ')');
-            wheels.forEach(([el, rad], k) => el.setAttribute('transform', wheelHome[k] + ' rotate(' + f(dx / rad * 57.3) + ')'));
-            dusk.setAttribute('opacity', f(x.easeInOut(t)));
-          }, 200).then(() => x.wait(600));
+          // the tractor coughs to life (shaking, big puffs of smoke), then pulls the full wagon off toward the barn,
+          // puffing as it goes; evening falls, the barn window lights up, the moon rises and the first stars come out
+          driving = true;
+          const dist = 340;
+          let dxNow = 0;
+          const start = x.tween(1400, t => { rigSet(0, Math.sin(t * 90) * 1.3 * (1 - t * 0.5)); }, 100);
+          const coughs = [150, 520, 900].map((d, k) => puff(STACK.x, STACK.y, 1.5 - k * 0.15, d));
+          const go = x.tween(4400, t => {
+            const e = x.easeIn(Math.min(1, t * 1.08)); dxNow = dist * e;
+            rigSet(dxNow, -Math.abs(Math.sin(t * 46)) * 0.9);
+            wheels.forEach(([el, rad], k) => el.setAttribute('transform', wheelHome[k] + ' rotate(' + f(dxNow / rad * 57.3) + ')'));
+          }, 1500);
+          const trail = Array.from({ length: 11 }, (_, k) => x.wait(1550 + k * 360).then(() => (dxNow < dist - 10 ? puff(STACK.x + dxNow, STACK.y, 0.9) : null)));
+          const evening = x.tween(4600, t => dusk.setAttribute('opacity', f(x.easeInOut(t))), 1500);
+          const barn = x.tween(700, t => barnWin.setAttribute('opacity', f(t)), 3700);
+          const rise = x.tween(3400, t => { moon.setAttribute('opacity', f(Math.min(1, t * 2))); moon.setAttribute('transform', 'translate(150 ' + f(84 - 50 * x.easeOut(t)) + ')'); }, 3200);
+          const night = x.tween(1300, t => { starsOn = t; }, 4400);
+          return Promise.all([start, go, evening, barn, rise, night].concat(coughs, trail)).then(() => x.wait(400));
         }
-        return { sync, place, remove, finale };
+        function ambient(T) {
+          drift(clouds, T); sway(tufts, T, 4);
+          if (starsOn) twinkle(stars, T, starsOn);
+          if (driving) return;
+          // the tractor idles: a little shake and a small puff now and then
+          rigSet(0, rigDip + Math.sin(T * 72) * 0.35);
+          if (T - lastPuff > 1.3) { lastPuff = T; puff(STACK.x, STACK.y, 0.55); }
+        }
+        return { sync, place, remove, finale, ambient };
       }
     };
   };
@@ -3019,53 +3466,93 @@ const Scenes = (function () {
     for (let k = 0; k < 14; k++) bg += '<path d="M' + f(r() * 300) + ' ' + f(198 + r() * 12) + 'h' + f(10 + r() * 30) + '" stroke="#fff4dc" stroke-width=".8" opacity=".5"/>';
     bg += '<ellipse cx="236" cy="200" rx="14" ry="2" fill="#fff0c8" opacity=".6"/>';
     for (let k = 0; k < 40; k++) { const x0 = r() * 300, h = 14 + r() * 26; bg += '<path d="M' + f(x0) + ' 240q' + f((r() - 0.5) * 8) + ' -' + f(h * 0.6) + ' ' + f((r() - 0.5) * 10) + ' -' + f(h) + '" stroke="' + (k % 3 ? '#8a7a3a' : '#a89450') + '" stroke-width="1.6" fill="none"/>'; if (k % 5 === 0) bg += '<ellipse cx="' + f(x0) + '" cy="' + f(240 - h) + '" rx="1.6" ry="5" fill="#6a4a2a"/>'; }
-    const svg =
+    const shimmer = Array.from({ length: 9 }, (_, k) => '<path class="sc-shim" d="M' + f(14 + ((k * 61) % 270)) + ' ' + f(197 + (k * 7) % 14) + 'h' + f(8 + (k * 13) % 18) + '" stroke="#fff6e0" stroke-width="1" stroke-linecap="round" opacity=".3"/>').join('');
+    const svg = CLOUD(0, 28) + CLOUD(1, 46) + CLOUD(2, 16) + shimmer +
+      Array.from({ length: 3 }, () => '<ellipse class="sc-ripple" rx="8" ry="2.2" fill="none" stroke="#fff6e4" stroke-width="1" opacity="0"/>').join('') +
       '<g class="sc-flock">' + SLOT.map((_, k) => '<g data-k="' + k + '">' + goose + '</g>').join('') + '</g>' +
-      '<g class="sc-dusk" opacity="0"><rect width="300" height="240" fill="url(#' + uid + '-dusk)"/></g>' + land.light;
+      '<g class="sc-feather" opacity="0"><path d="M0-6C2.4-3 2.4 3 0 6C-1.6 3-1.6-3 0-6Z" fill="#8e8478"/><path d="M0-6V6" stroke="#5e554c" stroke-width=".5"/></g>' +
+      [10, 30, 52, 250, 268, 290].map((rx, k) => '<g class="sc-tuft" data-x="' + rx + '" data-y="242" transform="translate(' + rx + ' 242)"><path d="M0 0q' + (k % 2 ? 2 : -2) + '-14 0-' + (24 + k * 3) + '" stroke="#8a7a3a" stroke-width="1.7" fill="none"/><ellipse cx="' + (k % 2 ? 1 : -1) + '" cy="-' + (24 + k * 3) + '" rx="1.8" ry="5" fill="#6a4a2a"/><path d="M0-2q-5-8-9-11M0-2q5-9 8-13" stroke="#7d8a3c" stroke-width="1.3" fill="none"/></g>').join('') +
+      '<g class="sc-dusk" opacity="0"><rect width="300" height="240" fill="url(#' + uid + '-dusk)"/></g>' + land.light +
+      [[70, 22], [120, 40], [160, 12], [208, 30], [256, 16], [28, 50]].map(([sx, sy]) => STAR(sx, sy)).join('');
     return {
       aria: 'Geese gathering into a V to fly south',
       defs: land.defs + K.lg(uid + '-body', [[0, '#9a8e80'], [1, '#5e554c']]) + K.lg(uid + '-wing', [[0, '#7a6e62'], [1, '#3e3832']]) +
         K.lg(uid + '-lake', [[0, '#b9c7c8'], [0.5, '#e6cfa6'], [1, '#8fa0a4']]) + K.lg(uid + '-dusk', [[0, '#6a4a8a', 0.3], [0.5, '#f2904a', 0.22], [1, '#2a1a10', 0.3]]),
       bg, svg,
       init(x) {
-        const els = x.q('.sc-flock > g'), dusk = x.svg.querySelector('.sc-dusk');
+        const els = x.q('.sc-flock > g'), dusk = x.svg.querySelector('.sc-dusk'), clouds = x.q('.sc-cloud'), reeds = x.q('.sc-tuft'), stars = x.q('.sc-star');
+        const shims = x.q('.sc-shim'), ripples = x.q('.sc-ripple'), feather = x.svg.querySelector('.sc-feather');
         const wingN = els.map(el => el.querySelector('.sc-wnear')), wingF = els.map(el => el.querySelector('.sc-wfar'));
         const slot = k => ({ x: SLOT[k].x, y: SLOT[k].y, rot: 0, s: 1, o: 1 });
         const off = k => ({ x: -40, y: 40 + (k * 37) % 120, rot: -6, s: 1, o: 0 });
         // flap: the near wing swings from up to down; the far wing answers it
         const flap = (k, ph) => { const s = Math.sin(ph); wingN[k].setAttribute('transform', 'scale(1 ' + f(s) + ')'); wingF[k].setAttribute('transform', 'scale(1 ' + f(-0.6 * s + 0.4) + ')'); };
         const glide = k => { wingN[k].setAttribute('transform', 'scale(1 .35)'); wingF[k].setAttribute('transform', 'scale(1 .6)'); };
+        const on = new Array(n).fill(false), busy = new Set();
+        let fin = false, starsOn = 0;
         function sync(done) {
-          els.forEach((el, k) => { x.pose(el, done[k] ? slot(k) : off(k)); glide(k); });
-          dusk.setAttribute('opacity', '0');
+          els.forEach((el, k) => { x.pose(el, done[k] ? slot(k) : off(k)); glide(k); on[k] = !!done[k]; });
+          busy.clear(); fin = false; starsOn = 0;
+          [dusk, feather].concat(ripples, stars).forEach(e => e.setAttribute('opacity', '0'));
         }
         function place(k) {
           const a = off(k), b = slot(k), el = els[k];
-          // flies in from the left with steady wingbeats, rises into its place in the V, and glides
-          return x.tween(1500, t => {
+          busy.add(k);
+          // flies in from the left with strong wingbeats, swoops a little past its place in the V, then eases back and glides
+          return x.tween(1350, t => {
             const e = x.easeOut(t);
-            x.pose(el, { x: lerp(a.x, b.x, e), y: lerp(a.y, b.y, x.easeInOut(t)) + Math.sin(t * 18) * 1.2 * (1 - t), rot: lerp(-6, 0, e), s: 1, o: Math.min(1, t * 4) });
+            x.pose(el, { x: lerp(a.x, b.x + 9, e), y: lerp(a.y, b.y - 4, x.easeInOut(t)) + Math.sin(t * 18) * 1.4 * (1 - t), rot: lerp(-8, 3, e), s: 1, o: Math.min(1, t * 4) });
             flap(k, t * 30);
-          }).then(() => glide(k));
+          }).then(() => x.tween(420, t => { const e = x.easeInOut(t); x.pose(el, { x: lerp(b.x + 9, b.x, e), y: lerp(b.y - 4, b.y, e), rot: 3 * (1 - e), s: 1, o: 1 }); flap(k, Math.PI / 2 + t * 6); }))
+            .then(() => { glide(k); on[k] = true; busy.delete(k); });
         }
         function remove(k) {
-          const a = slot(k), el = els[k];
-          // drops out of the V, sinks away down to the lake and is gone
-          return x.tween(1300, t => {
-            const e = x.easeIn(t);
-            x.pose(el, { x: a.x - 60 * t, y: a.y + 110 * e, rot: 14 * Math.sin(Math.PI * t), s: 1 - 0.2 * t, o: 1 - Math.max(0, (t - 0.6) / 0.4) });
-            flap(k, t * 22);
-          }).then(() => { x.pose(el, off(k)); glide(k); });
+          const a = slot(k), el = els[k], lake = { x: a.x - 70, y: 202 };
+          busy.add(k); on[k] = false;
+          // it falters (wobbling, out of rhythm), a feather comes loose, it drops out of the V and glides down
+          // to the lake with a splash of ripples, and swims off out of sight
+          const fx = a.x, fy = a.y + 4;
+          const loose = x.tween(2100, t => {
+            feather.setAttribute('opacity', f(Math.min(1, t * 6) * (1 - Math.max(0, (t - 0.8) / 0.2))));
+            feather.setAttribute('transform', 'translate(' + f(fx - 30 * t + Math.sin(t * 9) * 8) + ' ' + f(fy + 120 * Math.pow(t, 1.2)) + ') rotate(' + f(Math.sin(t * 9) * 50) + ')');
+          }, 250);
+          const fall = x.tween(560, t => { x.pose(el, { x: a.x + Math.sin(t * 20) * 2, y: a.y + 6 * t, rot: 16 * Math.sin(t * 5 * Math.PI), s: 1, o: 1 }); flap(k, t * 22 + Math.sin(t * 9) * 2); })
+            .then(() => x.tween(1300, t => { const e = x.easeIn(t); x.pose(el, { x: lerp(a.x, lake.x, t), y: lerp(a.y + 6, lake.y, e), rot: 10 * Math.sin(Math.PI * t), s: 1 - 0.15 * t, o: 1 }); flap(k, t * 14); }))
+            .then(() => {
+              glide(k);
+              const splash = x.tween(1100, t => ripples.forEach((r0, j) => { const c = Math.max(0, t - j * 0.18); r0.setAttribute('transform', 'translate(' + lake.x + ' ' + (lake.y + 4) + ') scale(' + f(0.3 + 2.2 * c) + ' ' + f(0.3 + 0.9 * c) + ')'); r0.setAttribute('opacity', f(c > 0 ? 0.8 * (1 - c) : 0)); }));
+              const swim = x.tween(900, t => x.pose(el, { x: lake.x - 30 * t, y: lake.y + 2, rot: 0, s: 0.85, o: 1 - t }), 300);
+              return Promise.all([splash, swim]);
+            });
+          return Promise.all([loose, fall]).then(() => { x.pose(el, off(k)); glide(k); busy.delete(k); });
         }
         function finale() {
-          // the whole V beats its wings and flies off to the upper right as the sun goes down
-          return x.tween(3400, t => {
+          // the whole flock beats its wings and lifts, then flies away up into the evening sky, getting smaller and
+          // smaller; a gust sends leaves past, and the first stars come out
+          fin = true;
+          const ready = x.tween(900, t => els.forEach((el, k) => { if (!on[k]) return; x.pose(el, { x: SLOT[k].x, y: SLOT[k].y - 6 * x.easeOut(t), rot: -3 * t, s: 1, o: 1 }); flap(k, t * 26 + k * 0.6); }), 100);
+          const away = x.tween(5000, t => {
             const e = x.easeIn(t);
-            els.forEach((el, k) => { x.pose(el, { x: SLOT[k].x + 260 * e, y: SLOT[k].y - 50 * e + Math.sin(t * 20 + k) * 1.5, rot: -4 * e, s: 1 - 0.25 * e, o: 1 }); flap(k, t * 34 + k * 0.7); });
-            dusk.setAttribute('opacity', f(x.easeInOut(t)));
-          }, 200).then(() => x.wait(500));
+            els.forEach((el, k) => { if (!on[k]) return; x.pose(el, { x: SLOT[k].x + 300 * e * (1 - 0.1 * e), y: SLOT[k].y - 6 - 42 * e + Math.sin(t * 20 + k) * 1.4 * (1 - e), rot: -4 - 6 * e, s: 1 - 0.55 * e, o: 1 - Math.max(0, (e - 0.85) / 0.15) }); flap(k, t * 40 + k * 0.7); });
+          }, 1000);
+          const evening = x.tween(5000, t => dusk.setAttribute('opacity', f(x.easeInOut(t))), 900);
+          const night = x.tween(1300, t => { starsOn = t; }, 4500);
+          return Promise.all([ready, away, evening, night, x.wait(1500).then(() => x.gust(false)), x.wait(3600).then(() => x.gust(false))]).then(() => x.wait(300));
         }
-        return { sync, place, remove, finale };
+        function ambient(T) {
+          drift(clouds, T); sway(reeds, T, 3);
+          if (starsOn) twinkle(stars, T, starsOn);
+          shims.forEach((l, k) => { l.setAttribute('transform', 'translate(' + f(Math.sin(T * 0.7 + k * 1.3) * 7) + ' 0)'); l.setAttribute('opacity', f(0.2 + 0.3 * (0.5 + 0.5 * Math.sin(T * 1.6 + k * 2.1)))); });
+          if (fin) return;
+          // geese in the V bob on the air and give a few slow wingbeats now and then
+          on.forEach((d, k) => {
+            if (!d || busy.has(k)) return;
+            x.pose(els[k], { x: SLOT[k].x, y: SLOT[k].y + Math.sin(T * 1.7 + k * 0.8) * 1.7, rot: Math.sin(T * 1.1 + k) * 1.5, s: 1, o: 1 });
+            const ph = (T * 0.33 + k * 0.29) % 1;
+            if (ph < 0.22) flap(k, Math.PI / 2 + (ph / 0.22) * Math.PI * 4); else glide(k);
+          });
+        }
+        return { sync, place, remove, finale, ambient };
       }
     };
   };
@@ -3169,7 +3656,7 @@ const Scenes = (function () {
     try {
       const A = window.AudioContext || window.webkitAudioContext;
       if (!A) return null;
-      actx = actx || new A();
+      if (!actx) { actx = new A(); if (SFX && SFX.warm) setTimeout(() => { try { SFX.warm(actx); } catch (e) { /* none */ } }, 1500); }   // sound sets that pre-render their clips start now
       if (actx.state === 'suspended') actx.resume();
       return actx;
     } catch (e) { return null; }
@@ -3373,7 +3860,7 @@ const Scenes = (function () {
     const rw = REWARDS[ai];
     $('#pcount').textContent = rw.doneShort;
     const panel = $('#puzzlePanel');
-    if (!rw.scene) { panel.classList.remove('boom'); void panel.offsetWidth; panel.classList.add('boom'); }
+    if (!rw.scene && !(puz && puz.gentle)) { panel.classList.remove('boom'); void panel.offsetWidth; panel.classList.add('boom'); }
     clearedSound(rw.clip !== undefined ? rw.clip : ai, endless ? 1 : last ? NR + 1 : from + 1, last);
     let moved = false;
     const go = () => {
@@ -3382,7 +3869,7 @@ const Scenes = (function () {
       if (endless) nextQuestion(); else if (last) showWin(true); else showAdvance(from);
     };
     puz.explode().then(() => later(go, 350));
-    later(go, rw.scene ? 6500 : 4000); // safety net if the browser pauses animation (tab in the background)
+    later(go, Math.max(rw.scene ? 6500 : 4000, ((puz && puz.finaleMs) || 0) + 2500)); // safety net if the browser pauses animation (tab in the background)
   }
 
   // ---------- screens ----------
