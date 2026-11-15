@@ -227,11 +227,19 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--gold); outl
 .mnum { padding: 0 .28em .1em; border-bottom: 1.5px solid currentColor; }
 .mden { padding: .1em .28em 0; }
 .mfrac sup { top: -.5em; }
-.msqrt .mrad { border-top: 1.5px solid currentColor; padding: 0 .12em 0 .1em; }
+/* radicals: an SVG sign stretched to the height of the radicand box, which carries the bar as its top border */
+.msqrt { position: relative; display: inline-block; padding-left: .6em; margin: 0 .04em; white-space: nowrap; }
+.msqrt.mhasidx { margin-left: .1em; }
+.mrsign { position: absolute; left: 0; top: .75px; width: .62em; height: calc(100% - .75px); overflow: visible; }
+.mrsign path { fill: none; stroke: currentColor; stroke-width: 1.5px; vector-effect: non-scaling-stroke; stroke-linejoin: round; stroke-linecap: round; }
+.msqrt .mrad { display: inline-block; border-top: 1.5px solid currentColor; padding: .14em .14em 0 .06em; line-height: 1.15; }
+.mrad sup { position: static; top: auto; vertical-align: .5em; line-height: 1; }
+.mrad sup.mfsup { vertical-align: .85em; }
+.mrad .mfrac { margin: .08em .1em; }
 .mbig { display: inline-flex; align-items: center; vertical-align: middle; border-left: 1.6px solid currentColor; border-right: 1.6px solid currentColor; border-radius: .8em / 50%; padding: .12em .12em; margin: 0 .06em; }
 .mbig + sup { top: -1.5em; }
 .mtext { font-family: "Segoe UI", system-ui, sans-serif; font-size: .9em; }
-.mroot { font-size: .58em; position: relative; top: -.85em; margin-right: -.42em; margin-left: .05em; }
+.mroot { font-size: .58em; position: absolute; right: calc(100% - .62em); bottom: calc(50% + .1em); line-height: 1; }
 .math sup.mfsup { font-size: .6em; top: -1.55em; margin-left: .08em; }
 .math sup.mfsup .mfrac { font-size: 1em; margin: 0 .02em; vertical-align: -.15em; line-height: 1.05; }
 .mden:has(.mfsup) { padding-top: .55em; }
@@ -399,7 +407,9 @@ const RG = (function () {
         case 'frac':
           html += '<span class="mfrac"><span class="mnum">' + renderSeq(tk.num) + '</span><span class="mden">' + renderSeq(tk.den) + '</span></span>';
           operand = true; break;
-        case 'sqrt': html += '<span class="msqrt">' + (tk.idx ? '<span class="mroot">' + esc(tk.idx) + '</span>' : '') + '√<span class="mrad">' + renderSeq(tk.seq) + '</span></span>'; operand = true; break;
+        // the radical sign is drawn (not a font glyph) so it stretches to the radicand and meets the bar exactly
+        case 'sqrt': html += '<span class="msqrt' + (tk.idx ? ' mhasidx' : '') + '" role="img" aria-label="' + (tk.idx ? 'root ' + esc(tk.idx) + ' of' : 'square root of') + '">' + (tk.idx ? '<span class="mroot">' + esc(tk.idx) + '</span>' : '') +
+          '<svg class="mrsign" viewBox="0 0 10 20" preserveAspectRatio="none" aria-hidden="true"><path d="M0.3 12.6 L2.6 11.2 L5.6 20 L10 0"/></svg><span class="mrad">' + renderSeq(tk.seq) + '</span></span>'; operand = true; break;
         case 'pi': html += 'π'; operand = true; break;
         case 'brace': html += '<span class="mbrace">' + tk.v + '</span>'; operand = tk.v === '}'; break;
         case 'big': html += '<span class="mbig">' + renderSeq(tk.seq) + '</span>'; operand = true; break;
@@ -641,8 +651,11 @@ const RGActivity = (function () {
    Lessons 1-6: nth roots and rational exponents; properties of rational exponents
    and radicals; composition and inverses of linear functions; inverses of nonlinear
    functions; graphing radical functions; radical equations.
-   Students may use their own calculators (TI-84); the game has no calculator of its own. Most numbers still
-   work out by hand; ev-calc and the horizon-distance problems are the calculator problems (round to two decimals).
+   Worked like the unit test: everything is done without a calculator except hz-alt (Round 4 only), which says
+   "Calculator allowed" in its prompt, like the test's Calculator part. The game has no calculator of its own.
+   Version 3 (Nov 12): ev-calc and hz-dist removed; hz-alt moved to Round 4 only.
+   Nov 15 (final handoff): the range restriction picks the sign of an inverse but is not written after it,
+   so inverse answers are f^-1(x) = sqrt(x - 5), with no "; y >= 0".
    Version 2 (Nov 10) follows the updated handoff: transformations of y = x^2, the pendulum and sphere-volume
    models, and equations with two radicals are out; calculator evaluation, describing radical graphs, cube-root
    graphs, vertex-form inverses, the horizon-distance model and a decimal power model are in.
@@ -836,35 +849,6 @@ const GAME_CONTENT = (function () {
         a: M(fr(1, val)), d: [D(M('-' + val), 'neg-exp'), D(M('' + val), 'neg-exp'), D(M('-' + fr(1, val)), 'neg-exp'), D(M(fr(1, b * m)), 'exp-order')],
         why: ['A negative exponent means the reciprocal; it does not make the answer negative.', `$${a}^{-${fr(m, n)}} = \\frac{1}{${a}^{${fr(m, n)}}} = \\frac{1}{${m === 1 ? rt(n, a) : '(' + rt(n, a) + ')^{' + m + '}'}}${m === 1 ? '' : ' = \\frac{1}{' + b + '^{' + m + '}}'} = ${fr(1, val)}$`],
         check: { kind: 'num', expr: a + '^{-' + fr(m, n) + '}' }
-      };
-    } },
-
-    { id: 'ev-calc', topic: 'roots', gen() {
-      // a non-perfect power, so the calculator is needed; answers rounded to two decimal places
-      let a, n, m, neg, val, ds;
-      const r2 = v => (Math.round(v * 100) / 100).toFixed(2);
-      for (let tries = 0; ; tries++) {
-        n = pick([3, 4, 5, 6]); m = pick([1, 1, 2, 3].filter(x => gcd(x, n) === 1)); neg = pick([false, false, true]);
-        a = rint(5, 90);
-        if (Number.isInteger(Math.round(Math.pow(a, 1 / n) * 1e6) / 1e6)) continue;
-        val = Math.pow(a, (neg ? -1 : 1) * m / n);
-        const raw = [
-          [neg ? -Math.pow(a, m / n) : Math.pow(a, m) / n, neg ? 'neg-exp' : 'calc-parens'],
-          [neg ? Math.pow(a, m / n) : a * m / n, neg ? 'neg-exp' : 'exp-meaning'],
-          [neg ? Math.pow(a, -n / m) : Math.pow(a, 1 / (n * m)), neg ? 'rad-form' : 'exp-order'],
-          [neg ? -Math.pow(a, -m / n) : Math.pow(a, n / m), neg ? 'neg-exp' : 'rad-form']
-        ];
-        ds = raw.map(([v, t]) => [r2(v), t]).filter(([t]) => t !== r2(val) && Math.abs(Number(t)) >= 0.01 && Math.abs(Number(t)) < 1e6);
-        if (new Set(ds.map(x => x[0])).size === ds.length && ds.length >= 3 && val > 0.01) break;
-        if (tries > 200) throw new Error('ev-calc: no numbers');
-      }
-      const e = (neg ? '-' : '') + fr(m, n);
-      return {
-        q: `Use a calculator to evaluate $${a}^{${e}}$. Round to two decimal places.`,
-        a: M('\\approx ' + r2(val)), d: ds.map(([t, k]) => D(M('\\approx ' + t), k)),
-        why: ['Put the whole exponent in parentheses on the calculator: ' + a + '^(' + (neg ? '−' : '') + m + '/' + n + ').' + (neg ? ' A negative exponent means the reciprocal, so the answer is positive and less than $1$.' : ''),
-          `$${a}^{${e}} \\approx ${r2(val)}$`],
-        check: { kind: 'custom', test: () => (Math.abs(Number(r2(val)) - Math.pow(a, (neg ? -m : m) / n)) <= 0.005 + 1e-12 && new Set(ds.map(x => x[0]).concat([r2(val)])).size === ds.length + 1 ? '' : 'bad rounding or duplicate choices') }
       };
     } },
 
@@ -1333,9 +1317,9 @@ const GAME_CONTENT = (function () {
       const other = side === 'ge' ? 'le' : 'ge';
       return {
         q: `Find the inverse of $f(x) = ${f}$.`,
-        a: M('f^{-1}(x) = ' + inv + '$; $' + rng),
-        d: [D(M('f^{-1}(x) = \\pm \\sqrt{' + xh(cc) + '}'), 'inv-pm'), D(M('f^{-1}(x) = ' + (sgn ? '' : '-') + '\\sqrt{' + xh(cc) + '}$; $y \\' + other + ' 0'), 'inv-range-sign'),
-          D(M('f^{-1}(x) = ' + sgn + '\\sqrt{x}' + plusk(-cc) + '$; $' + rng), 'root-before-isolate'), D(M('f^{-1}(x) = ' + sgn + '\\sqrt{' + xh(-cc) + '}$; $' + rng), 'inv-steps')],
+        a: M('f^{-1}(x) = ' + inv),
+        d: [D(M('f^{-1}(x) = \\pm \\sqrt{' + xh(cc) + '}'), 'inv-pm'), D(M('f^{-1}(x) = ' + (sgn ? '' : '-') + '\\sqrt{' + xh(cc) + '}'), 'inv-range-sign'),
+          D(M('f^{-1}(x) = ' + sgn + '\\sqrt{x}' + plusk(-cc)), 'root-before-isolate'), D(M('f^{-1}(x) = ' + sgn + '\\sqrt{' + xh(-cc) + '}'), 'inv-steps')],
         why: ['Switch $x$ and $y$, then solve for $y$.', `$x = y^{2}${plusk(cc)}$, so $y^{2} = ${xh(cc)}$ and $y = \\pm \\sqrt{${xh(cc)}}$.`,
           `The domain of $f$ ($x \\${side} 0$) becomes the range of $f^{-1}$ ($${rng}$), so keep the ${side === 'ge' ? 'positive' : 'negative'} root: $f^{-1}(x) = ${inv}$.`],
         check: { kind: 'inverse', f: 'x^{2}' + plusk(cc), g: inv, dom: side === 'ge' ? [0.2, 3] : [-3, -0.2] }
@@ -1347,9 +1331,9 @@ const GAME_CONTENT = (function () {
       const f = a + 'x^{2}$, $x \\' + side + ' 0', inv = sgn + '\\sqrt{\\frac{x}{' + a + '}}', rng = 'y \\' + side + ' 0', other = side === 'ge' ? 'le' : 'ge';
       return {
         q: `Find the inverse of $f(x) = ${f}$.`,
-        a: M('f^{-1}(x) = ' + inv + '$; $' + rng),
-        d: [D(M('f^{-1}(x) = \\pm \\sqrt{\\frac{x}{' + a + '}}'), 'inv-pm'), D(M('f^{-1}(x) = ' + (sgn ? '' : '-') + '\\sqrt{\\frac{x}{' + a + '}}$; $y \\' + other + ' 0'), 'inv-range-sign'),
-          D(M('f^{-1}(x) = ' + sgn + '\\frac{\\sqrt{x}}{' + a + '}$; $' + rng), 'root-before-isolate'), D(M('f^{-1}(x) = ' + sgn + '\\sqrt{' + a + 'x}$; $' + rng), 'inv-steps')],
+        a: M('f^{-1}(x) = ' + inv),
+        d: [D(M('f^{-1}(x) = \\pm \\sqrt{\\frac{x}{' + a + '}}'), 'inv-pm'), D(M('f^{-1}(x) = ' + (sgn ? '' : '-') + '\\sqrt{\\frac{x}{' + a + '}}'), 'inv-range-sign'),
+          D(M('f^{-1}(x) = ' + sgn + '\\frac{\\sqrt{x}}{' + a + '}'), 'root-before-isolate'), D(M('f^{-1}(x) = ' + sgn + '\\sqrt{' + a + 'x}'), 'inv-steps')],
         why: ['Switch $x$ and $y$, then solve for $y$.', `$x = ${a}y^{2}$, so $y^{2} = \\frac{x}{${a}}$ and $y = \\pm \\sqrt{\\frac{x}{${a}}}$.`, `The range of $f^{-1}$ is $${rng}$, so $f^{-1}(x) = ${inv}$.`],
         check: { kind: 'inverse', f: a + 'x^{2}', g: inv, dom: side === 'ge' ? [0.2, 3] : [-3, -0.2] }
       };
@@ -1361,11 +1345,11 @@ const GAME_CONTENT = (function () {
       const inv = sgn + '\\sqrt{' + xh(k) + '}' + plusk(h), rng = 'y \\' + side + ' ' + h;
       return {
         q: `Find the inverse of $f(x) = ${f}$.`,
-        a: M('f^{-1}(x) = ' + inv + '$; $' + rng),
+        a: M('f^{-1}(x) = ' + inv),
         d: [D(M('f^{-1}(x) = \\pm \\sqrt{' + xh(k) + '}' + plusk(h)), 'inv-pm'),
-          D(M('f^{-1}(x) = ' + (sgn ? '' : '-') + '\\sqrt{' + xh(k) + '}' + plusk(h) + '$; $y \\' + other + ' ' + h), 'inv-range-sign'),
-          D(M('f^{-1}(x) = ' + sgn + '\\sqrt{' + xh(-k) + '}' + plusk(-h) + '$; $' + rng), 'inv-steps'),
-          D(M('f^{-1}(x) = ' + sgn + '\\sqrt{' + xh(h) + '}' + plusk(k) + '$; $' + rng), 'inv-steps')],
+          D(M('f^{-1}(x) = ' + (sgn ? '' : '-') + '\\sqrt{' + xh(k) + '}' + plusk(h)), 'inv-range-sign'),
+          D(M('f^{-1}(x) = ' + sgn + '\\sqrt{' + xh(-k) + '}' + plusk(-h)), 'inv-steps'),
+          D(M('f^{-1}(x) = ' + sgn + '\\sqrt{' + xh(h) + '}' + plusk(k)), 'inv-steps')],
         why: ['Switch $x$ and $y$, then solve for $y$.', `$x = (${xh(h, 'y')})^{2}${plusk(k)}$, so $(${xh(h, 'y')})^{2} = ${xh(k)}$ and $${xh(h, 'y')} = \\pm \\sqrt{${xh(k)}}$.`,
           `The domain of $f$ ($x \\${side} ${h}$) becomes the range of $f^{-1}$ ($${rng}$), so keep the ${side === 'ge' ? 'positive' : 'negative'} root: $f^{-1}(x) = ${inv}$.`],
         check: { kind: 'inverse', f: fx, g: inv, dom: side === 'ge' ? [h + 0.2, h + 3] : [h - 3, h - 0.2] }
@@ -1496,26 +1480,13 @@ const GAME_CONTENT = (function () {
       };
     } },
 
-    { id: 'hz-dist', topic: 'graph', gen() {
-      const A = pick([900, 1600, 2500, 3600, 4900, 6400, 8100, 10000, 1200, 3000, 5000, 7500, 12000, 15000, 20000]);
-      const d = 1.22 * Math.sqrt(A), r1 = v => (Math.round(v * 10) / 10).toFixed(1);
-      const raw = [[Math.sqrt(1.22 * A), 'model-order'], [Math.sqrt(A), 'root-forgot'], [1.22 + Math.sqrt(A), 'root-arith'], [Math.sqrt(A) / 1.22, 'inv-steps']];
-      const ds = raw.map(([v, m]) => [r1(v), m]).filter(([t]) => t !== r1(d));
-      return {
-        q: `A pilot can see about $d = 1.22\\sqrt{a}$ miles to the horizon, where $a$ is the altitude in feet. How far can a pilot see from $${A}$ feet? Round to the nearest tenth.`,
-        a: '$\\approx ' + r1(d) + '$ miles', d: ds.map(([t, m]) => D('$\\approx ' + t + '$ miles', m)),
-        why: [`Take the square root first, then multiply by $1.22$: $d = 1.22\\sqrt{${A}} \\approx ${r1(d)}$ miles.`],
-        check: { kind: 'custom', test: () => (new Set(ds.map(x => x[0])).size === ds.length && ds.length >= 3 ? '' : 'duplicate choices') }
-      };
-    } },
-
     { id: 'hz-alt', topic: 'graph', gen() {
       const D0 = pick([50, 60, 75, 80, 90, 100, 110, 120, 125, 150]);
       const A = Math.pow(D0 / 1.22, 2), r0 = v => String(Math.round(v));
       const raw = [[D0 / 1.22, 'eq-square'], [D0 * D0 / 1.22, 'eq-isolate'], [Math.pow(1.22 * D0, 2), 'inv-steps']];
       const ds = raw.map(([v, m]) => [r0(v), m]).filter(([t]) => t !== r0(A));
       return {
-        q: `A pilot can see about $d = 1.22\\sqrt{a}$ miles to the horizon, where $a$ is the altitude in feet. At about what altitude can a pilot see $${D0}$ miles? Round to the nearest foot.`,
+        q: `Calculator allowed. A pilot can see about $d = 1.22\\sqrt{a}$ miles to the horizon, where $a$ is the altitude in feet. At about what altitude can a pilot see $${D0}$ miles? Round to the nearest foot.`,
         a: '$\\approx ' + r0(A) + '$ feet', d: ds.map(([t, m]) => D('$\\approx ' + t + '$ feet', m)),
         why: ['Divide by $1.22$ first, then square both sides.', `$\\sqrt{a} = \\frac{${D0}}{1.22}$, so $a = \\big{\\frac{${D0}}{1.22}}^{2} \\approx ${r0(A)}$ feet.`],
         check: { kind: 'custom', test: () => (Math.abs(1.22 * Math.sqrt(Math.round(A)) - D0) < 0.01 && new Set(ds.map(x => x[0])).size === ds.length && ds.length >= 3 ? '' : 'bad') }
@@ -1604,7 +1575,7 @@ const GAME_CONTENT = (function () {
   };
   const SKILL_LIST = {
     'nth-roots': ['rt-real', 'rt-count'],
-    'rat-exp': ['ex-to-exp', 'ex-to-rad', 'ev-unit', 'ev-frac', 'ev-neg', 'ev-calc'],
+    'rat-exp': ['ex-to-exp', 'ex-to-rad', 'ev-unit', 'ev-frac', 'ev-neg'],
     'solve-power': ['sv-pow', 'sv-coef', 'sv-shift'],
     'exp-props': ['pr-prod', 'pr-power', 'pr-quot', 'pr-radprod', 'pr-radprod3', 'pr-radquot', 'sm-varexp'],
     'simplify-rad': ['sm-simplest', 'sm-simplest3', 'sm-ration', 'sm-ration3', 'sm-like', 'sm-like3', 'sm-var', 'sm-pm'],
@@ -1612,7 +1583,7 @@ const GAME_CONTENT = (function () {
     'inv-linear': ['il-linear', 'il-verify', 'il-model', 'il-model-use'],
     'inv-nonlinear': ['in-onetoone', 'in-pairs', 'in-cubic', 'in-quad', 'in-quad-hard', 'in-quad-vertex', 'in-model'],
     'transform': ['rd-describe', 'tf-write'],
-    'radical-graphs': ['tf-start', 'tf-keypoint', 'tf-domain', 'tf-fromgraph', 'tf-graphpick', 'hz-dist', 'hz-alt'],
+    'radical-graphs': ['tf-start', 'tf-keypoint', 'tf-domain', 'tf-fromgraph', 'tf-graphpick', 'hz-alt'],
     'radical-eqs': ['eq-basic', 'eq-cube', 'eq-isolate', 'eq-extraneous', 'eq-ratexp']
   };
 
@@ -1700,12 +1671,12 @@ const GAME_CONTENT = (function () {
       compose: ['cp-eval'], invlin: ['il-linear'], invnon: ['in-onetoone'], transform: ['rd-describe'], radfn: ['tf-start'], radeq: ['eq-basic']
     },
     2: {
-      roots: ['ex-to-rad', 'ev-frac', 'ev-calc'], solvepow: ['sv-pow', 'sv-coef'], props: ['pr-power', 'pr-quot', 'pr-radprod3', 'sm-varexp'], simplify: ['sm-simplest3', 'sm-ration', 'sm-like'],
-      compose: ['cp-write'], invlin: ['il-linear', 'il-verify'], invnon: ['in-pairs', 'in-cubic'], transform: ['rd-describe', 'tf-write'], radfn: ['tf-domain', 'hz-dist'], radeq: ['eq-basic', 'eq-cube']
+      roots: ['ex-to-rad', 'ev-frac'], solvepow: ['sv-pow', 'sv-coef'], props: ['pr-power', 'pr-quot', 'pr-radprod3', 'sm-varexp'], simplify: ['sm-simplest3', 'sm-ration', 'sm-like'],
+      compose: ['cp-write'], invlin: ['il-linear', 'il-verify'], invnon: ['in-pairs', 'in-cubic'], transform: ['rd-describe', 'tf-write'], radfn: ['tf-domain', 'tf-start'], radeq: ['eq-basic', 'eq-cube']
     },
     3: {
-      roots: ['ev-neg', 'ev-calc'], solvepow: ['sv-coef', 'sv-shift'], props: ['pr-radquot', 'sm-varexp'], simplify: ['sm-ration3', 'sm-like3', 'sm-var'],
-      compose: ['cp-domain', 'cp-discount'], invlin: ['il-verify', 'il-model'], invnon: ['in-quad', 'in-cubic', 'in-quad-vertex'], transform: ['tf-write', 'tf-keypoint'], radfn: ['tf-domain', 'tf-fromgraph', 'hz-alt'], radeq: ['eq-isolate', 'eq-extraneous']
+      roots: ['ev-neg'], solvepow: ['sv-coef', 'sv-shift'], props: ['pr-radquot', 'sm-varexp'], simplify: ['sm-ration3', 'sm-like3', 'sm-var'],
+      compose: ['cp-domain', 'cp-discount'], invlin: ['il-verify', 'il-model'], invnon: ['in-quad', 'in-cubic', 'in-quad-vertex'], transform: ['tf-write', 'tf-keypoint'], radfn: ['tf-domain', 'tf-fromgraph'], radeq: ['eq-isolate', 'eq-extraneous']
     },
     4: {
       roots: ['ev-neg', 'sv-shift'], props: ['sm-var', 'sm-like3', 'sm-ration3'], compose: ['cp-discount', 'cp-domain', 'il-model-use'],
@@ -1725,12 +1696,13 @@ const GAME_CONTENT = (function () {
 
   return {
     id: 'alg2-radicals-unit',
-    version: 2,
+    version: 3,
     title: 'Algebra II Review Game',
     subtitle: 'Rational Exponents and Radical Functions Review',
-    // 3 x 3 steps per round, four rounds. Students may use their own calculators. Leaving the game brings a new problem; copying is off.
+    // 3 x 3 steps per round, four rounds. No calculator except problems marked "Calculator allowed" (Round 4). Leaving the game brings a new problem; copying is off.
     settings: { puzzle: { cols: 3, rows: 3, perCorrect: 1, perMiss: 1 }, missPauseSeconds: 4, endlessRounds: [3, 4], rotateBy: 'area',
-      swapOnLeave: { awaySeconds: 4 }, blockCopy: true },
+      swapOnLeave: { awaySeconds: 4 }, blockCopy: true,
+      rules: ['Work every problem <b>without a calculator</b>, just like the No Calculator part of the test. A few Round 4 problems say <b>Calculator allowed</b>; only those may use one.'] },
     topics: [
       { key: 'roots', name: 'nth Roots and Rational Exponents' },
       { key: 'props', name: 'Properties of Exponents and Radicals' },
@@ -3455,6 +3427,7 @@ const Scenes = (function () {
       '<li>Your progress is saved on this computer, so a refresh will not erase it.</li>' +
       (SWAP ? '<li>Stay in the game while you work: if you switch to another tab or app, or reload the page, you will get a new problem when you come back.</li>' : '') +
       (S.blockCopy ? '<li>Copying the questions is turned off.</li>' : '') +
+      (S.rules || []).map(r => '<li>' + r + '</li>').join('') +            // extra rule lines a content pack can add (trusted markup)
       '</ul>' +
       '<form id="startForm" autocomplete="off">' +
       '<label for="name">Your name (first and last)</label>' +
