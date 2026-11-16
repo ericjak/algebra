@@ -156,7 +156,7 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--gold); outl
 .choice:hover:not(:disabled) { border-color: var(--brand); }
 .choice:active:not(:disabled) { transform: scale(.995); }
 .choice .key { display: inline-grid; place-items: center; width: 30px; height: 30px; flex: none; border-radius: 8px; background: var(--bg); color: var(--muted); font-weight: 700; font-size: .9rem; }
-.choice .txt { font-size: 1.08rem; line-height: 1.7; overflow-x: auto; overflow-y: hidden; }
+.choice .txt { font-size: 1.08rem; line-height: 1.7; overflow-x: auto; overflow-y: hidden; padding: .1em 0; }
 .choice.picked { border-color: var(--brand); background: var(--brand-soft); }
 .choice.picked .key { background: var(--brand); color: var(--brand-ink); }
 .choice:disabled { cursor: default; color: inherit; }
@@ -217,8 +217,8 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--gold); outl
 .math { font-family: "Cambria Math", Cambria, "STIX Two Math", "Times New Roman", Times, serif; font-size: 1.1em; white-space: nowrap; }
 .math i { font-style: italic; padding-right: .04em; }
 .math i.mf { padding: 0 .16em 0 .08em; }   /* italic f's hook and tail run into a neighboring ( in Cambria Math */
-.math sup, .math sub { font-size: .68em; line-height: 0; position: relative; vertical-align: baseline; margin-left: .04em; }
-.math sup { top: -.6em; }
+.math sup, .math sub { font-size: .68em; line-height: 1; position: relative; vertical-align: baseline; margin-left: .04em; }
+.math sup { vertical-align: .62em; }   /* raised in the layout (not by top), so boxes that clip overflow make room for it */
 .math sub { top: .3em; }
 .mop { margin: 0 .25em; }
 .marr { font-family: "Segoe UI Symbol", "Segoe UI", "DejaVu Sans", system-ui, sans-serif; }
@@ -227,9 +227,10 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--gold); outl
 .mfrac { display: inline-flex; flex-direction: column; align-items: center; vertical-align: middle; margin: 0 .16em; font-size: .92em; line-height: 1.25; }
 .mnum { padding: 0 .28em .1em; border-bottom: 1.5px solid currentColor; }
 .mden { padding: .1em .28em 0; }
-.mfrac sup { top: -.5em; }
+.mnum, .mden { align-self: stretch; text-align: center; }   /* the fraction bar spans the wider of the two */
+.mfrac sup { vertical-align: .5em; }
 /* radicals: an SVG sign stretched to the height of the radicand box, which carries the bar as its top border */
-.msqrt { position: relative; display: inline-block; padding-left: .6em; margin: 0 .04em; white-space: nowrap; }
+.msqrt { position: relative; display: inline-block; padding-left: .6em; margin: 0 .04em; white-space: nowrap; line-height: 0; }   /* line-height 0: the box is exactly the radicand's, so the sign's tip meets the bar */
 .msqrt.mhasidx { margin-left: .1em; }
 .mrsign { position: absolute; left: 0; top: .75px; width: .62em; height: calc(100% - .75px); overflow: visible; }
 .mrsign path { fill: none; stroke: currentColor; stroke-width: 1.5px; vector-effect: non-scaling-stroke; stroke-linejoin: round; stroke-linecap: round; }
@@ -238,10 +239,10 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--gold); outl
 .mrad sup.mfsup { vertical-align: .85em; }
 .mrad .mfrac { margin: .08em .1em; }
 .mbig { display: inline-flex; align-items: center; vertical-align: middle; border-left: 1.6px solid currentColor; border-right: 1.6px solid currentColor; border-radius: .8em / 50%; padding: .12em .12em; margin: 0 .06em; }
-.mbig + sup { top: -1.5em; }
+.mbig + sup { vertical-align: 1.5em; }
 .mtext { font-family: "Segoe UI", system-ui, sans-serif; font-size: .9em; }
 .mroot { font-size: .58em; position: absolute; right: calc(100% - .62em); bottom: calc(50% + .1em); line-height: 1; }
-.math sup.mfsup { font-size: .6em; top: -1.55em; margin-left: .08em; }
+.math sup.mfsup { font-size: .6em; vertical-align: 1.25em; margin-left: .08em; }
 .math sup.mfsup .mfrac { font-size: 1em; margin: 0 .02em; vertical-align: -.15em; line-height: 1.05; }
 .mden:has(.mfsup) { padding-top: .55em; }
 .mnum:has(.mfsup) { padding-top: .45em; }
