@@ -268,6 +268,8 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--gold); outl
 .copied { color: var(--good); font-weight: 700; }
 .codebox { margin-top: 10px; font: 13px/1.45 ui-monospace, "Cascadia Mono", Consolas, monospace; word-break: break-all; background: var(--card); color: var(--ink);
   border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; user-select: all; -webkit-user-select: all; cursor: text; max-height: 9.5em; overflow: auto; }
+
+.buildver { text-align: center; color: var(--muted); font-size: .75rem; margin: 6px 0 16px; opacity: .85; }   /* the build stamp, to confirm the latest file loaded */
 </style>
 </head>
 <body>
@@ -280,6 +282,7 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--gold); outl
   </div>
 </header>
 <main id="main"><noscript>This game needs JavaScript. Download the file and open it in a browser such as Chrome or Edge.</noscript></main>
+<div class="buildver" title="Changes every time the file is rebuilt">Version v3 · ba602a</div>
 <div id="overlay" hidden></div>
 <script>
 /* =====================================================================
