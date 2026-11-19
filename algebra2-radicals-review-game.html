@@ -214,9 +214,12 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--gold); outl
 @keyframes pop { from { transform: scale(.85); opacity: 0; } to { transform: none; opacity: 1; } }
 
 /* math */
-.math { font-family: "Cambria Math", Cambria, "STIX Two Math", "Times New Roman", Times, serif; font-size: 1.1em; white-space: nowrap; }
+/* Fonts: Cambria Math on Windows. On Macs and iPhones, Times New Roman, not STIX Two Math: that math font has no italic,
+   so Safari slants it artificially and exponents crowd into the letter before them (x³y² read like x·3·y·2). */
+.math { font-family: "Cambria Math", Cambria, "Times New Roman", Times, "STIX Two Math", serif; font-size: 1.1em; white-space: nowrap; }
 .math i { font-style: italic; padding-right: .04em; }
 .math i.mf { padding: 0 .16em 0 .08em; }   /* italic f's hook and tail run into a neighboring ( in Cambria Math */
+.math i + sup { margin-left: .1em; }   /* italic correction: keep an exponent clear of the slanted letter before it */
 .math sup, .math sub { font-size: .68em; line-height: 1; position: relative; vertical-align: baseline; margin-left: .04em; }
 .math sup { vertical-align: .62em; }   /* raised in the layout (not by top), so boxes that clip overflow make room for it */
 .math sub { top: .3em; }
@@ -236,13 +239,16 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--gold); outl
 .mrsign path { fill: none; stroke: currentColor; stroke-width: 1.5px; vector-effect: non-scaling-stroke; stroke-linejoin: round; stroke-linecap: round; }
 .msqrt .mrad { display: inline-block; border-top: 1.5px solid currentColor; padding: .14em .14em 0 .06em; line-height: 1.15; }
 .mrad sup { position: static; top: auto; vertical-align: .5em; line-height: 1; }
-.mrad sup.mfsup { vertical-align: .85em; }
 .mrad .mfrac { margin: .08em .1em; }
 .mbig { display: inline-flex; align-items: center; vertical-align: middle; border-left: 1.6px solid currentColor; border-right: 1.6px solid currentColor; border-radius: .8em / 50%; padding: .12em .12em; margin: 0 .06em; }
 .mbig + sup { vertical-align: 1.5em; }
 .mtext { font-family: "Segoe UI", system-ui, sans-serif; font-size: .9em; }
 .mroot { font-size: .58em; position: absolute; right: calc(100% - .62em); bottom: calc(50% + .1em); line-height: 1; }
-.math sup.mfsup { font-size: .6em; vertical-align: 1.25em; margin-left: .08em; }
+/* a fraction exponent: its baseline is the numerator's, so raise it enough that the denominator clears the base's
+   x-height (2.1em puts the bottom of the denominator about .3em above the baseline, in every font; 1.25em left it
+   below the baseline, so 49^(1/2) read like 49½) */
+.math sup.mfsup { font-size: .6em; vertical-align: 2.1em; margin-left: .08em; }
+.mfsup .mfneg { vertical-align: -.78em; }   /* the minus of x^(-2/3) beside the fraction bar, not up by the numerator */
 .math sup.mfsup .mfrac { font-size: 1em; margin: 0 .02em; vertical-align: -.15em; line-height: 1.05; }
 .mden:has(.mfsup) { padding-top: .55em; }
 .mnum:has(.mfsup) { padding-top: .45em; }
@@ -282,7 +288,7 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--gold); outl
   </div>
 </header>
 <main id="main"><noscript>This game needs JavaScript. Download the file and open it in a browser such as Chrome or Edge.</noscript></main>
-<div class="buildver" title="Changes every time the file is rebuilt">Version v3 · ba602a</div>
+<div class="buildver" title="Changes every time the file is rebuilt">Version v3 · 02669d</div>
 <div id="overlay" hidden></div>
 <script>
 /* =====================================================================
@@ -406,7 +412,9 @@ const RG = (function () {
         case 'sup': {
           // a fraction exponent (x^{2/3}, x^{-3/4}) sits higher and smaller so it can't be read as a mixed number
           const fracExp = tk.seq.some(u => u.t === 'frac');
-          html += '<sup' + (fracExp ? ' class="mfsup"' : '') + '>' + renderSeq(tk.seq) + '</sup>'; operand = true; break;
+          let inner = renderSeq(tk.seq);
+          if (fracExp) inner = inner.replace(/^−/, '<span class="mfneg">−</span>');   // the minus of x^{-2/3} lines up with the fraction bar
+          html += '<sup' + (fracExp ? ' class="mfsup"' : '') + '>' + inner + '</sup>'; operand = true; break;
         }
         case 'sub': html += '<sub>' + renderSeq(tk.seq) + '</sub>'; operand = true; break;
         case 'frac':
